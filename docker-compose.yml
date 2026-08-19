@@ -1,0 +1,60 @@
+# Nota sobre 'cpus': este campo a nivel de servicio (no dentro de 'deploy:')
+# es respetado por 'docker compose up' en Docker Compose V2 incluso SIN modo
+# swarm -- es la forma correcta de limitar CPU real en un entorno de
+# desarrollo/tesis con un solo host. Docker aplica el limite vía cgroups,
+# generando heterogeneidad de capacidad REAL entre nodos (no simulada por
+# software), que es justamente lo que describe el diseño experimental del
+# plan de tesis.
+
+services:
+  node-a:
+    build: ./worker
+    environment:
+      - NODE_ID=node-a
+      - NODE_SPEED=1.0
+      - STATS_LATENCY_MS=25
+    ports:
+      - "5001:5000"
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  node-b:
+    build: ./worker
+    environment:
+      - NODE_ID=node-b
+      - NODE_SPEED=0.7
+      - STATS_LATENCY_MS=25
+    ports:
+      - "5002:5000"
+    cpus: 0.7
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  node-c:
+    build: ./worker
+    environment:
+      - NODE_ID=node-c
+      - NODE_SPEED=0.45
+      - STATS_LATENCY_MS=25
+    ports:
+      - "5003:5000"
+    cpus: 0.45
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  default:
+    name: lb_thesis_net

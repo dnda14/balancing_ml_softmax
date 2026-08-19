@@ -1,0 +1,782 @@
+[
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 260.86662769317627,
+    "latency_median_ms": 130.29348850250244,
+    "latency_p90_ms": 616.8150901794434,
+    "latency_stdev_ms": 316.3720969311908,
+    "throughput_req_s": 13.195746759694238,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 0,
+    "seed": 100
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 147.78883775075278,
+    "latency_median_ms": 109.42566394805908,
+    "latency_p90_ms": 312.29448318481445,
+    "latency_stdev_ms": 102.99278028432005,
+    "throughput_req_s": 13.299016705068468,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 0,
+    "seed": 100
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 305.96195062001544,
+    "latency_median_ms": 200.99568367004395,
+    "latency_p90_ms": 705.0955295562744,
+    "latency_stdev_ms": 263.29037130444345,
+    "throughput_req_s": 13.239169141264217,
+    "per_node_counts": {
+      "node-b": 65,
+      "node-a": 54,
+      "node-c": 31
+    },
+    "load_distribution_std": 14.165686240583852,
+    "avg_poll_cycle_ms": 264.43945277820933,
+    "rep": 0,
+    "seed": 100
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 208.8288418451945,
+    "latency_median_ms": 167.62733459472656,
+    "latency_p90_ms": 432.1904182434082,
+    "latency_stdev_ms": 154.43719944345324,
+    "throughput_req_s": 13.16551941104778,
+    "per_node_counts": {
+      "node-b": 29,
+      "node-a": 87,
+      "node-c": 34
+    },
+    "load_distribution_std": 26.242459234352765,
+    "avg_poll_cycle_ms": 104.54785957765043,
+    "rep": 0,
+    "seed": 100
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 292.91646162668866,
+    "latency_median_ms": 120.02706527709961,
+    "latency_p90_ms": 844.3760871887207,
+    "latency_stdev_ms": 394.2735331219574,
+    "throughput_req_s": 12.696326507203134,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 1,
+    "seed": 101
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 133.6859385172526,
+    "latency_median_ms": 105.48126697540283,
+    "latency_p90_ms": 256.4740180969238,
+    "latency_stdev_ms": 111.30522683357657,
+    "throughput_req_s": 13.261768676796539,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 1,
+    "seed": 101
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 290.7993793487549,
+    "latency_median_ms": 207.14282989501953,
+    "latency_p90_ms": 630.6900978088379,
+    "latency_stdev_ms": 256.67788543367965,
+    "throughput_req_s": 13.219308827128872,
+    "per_node_counts": {
+      "node-a": 67,
+      "node-b": 56,
+      "node-c": 27
+    },
+    "load_distribution_std": 16.87206764645835,
+    "avg_poll_cycle_ms": 246.30572895208994,
+    "rep": 1,
+    "seed": 101
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 262.71101156870526,
+    "latency_median_ms": 176.89931392669678,
+    "latency_p90_ms": 684.8545074462891,
+    "latency_stdev_ms": 262.5800601235278,
+    "throughput_req_s": 13.119465333475828,
+    "per_node_counts": {
+      "node-a": 56,
+      "node-b": 62,
+      "node-c": 32
+    },
+    "load_distribution_std": 12.96148139681572,
+    "avg_poll_cycle_ms": 133.2156566473154,
+    "rep": 1,
+    "seed": 101
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 182.0094108581543,
+    "latency_median_ms": 119.22109127044678,
+    "latency_p90_ms": 331.77852630615234,
+    "latency_stdev_ms": 196.8097405373617,
+    "throughput_req_s": 12.5664346395719,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 2,
+    "seed": 102
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 143.64498933156332,
+    "latency_median_ms": 113.32285404205322,
+    "latency_p90_ms": 251.8901824951172,
+    "latency_stdev_ms": 112.25687949896566,
+    "throughput_req_s": 13.313326912250648,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 2,
+    "seed": 102
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 560.8084917068481,
+    "latency_median_ms": 238.29078674316406,
+    "latency_p90_ms": 1378.6437511444092,
+    "latency_stdev_ms": 849.2310093441358,
+    "throughput_req_s": 13.71617263282745,
+    "per_node_counts": {
+      "node-a": 47,
+      "node-b": 61,
+      "node-c": 42
+    },
+    "load_distribution_std": 8.04155872120988,
+    "avg_poll_cycle_ms": 314.8355384667714,
+    "rep": 2,
+    "seed": 102
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 205.47072251637778,
+    "latency_median_ms": 161.68367862701416,
+    "latency_p90_ms": 409.2278480529785,
+    "latency_stdev_ms": 144.02472445468442,
+    "throughput_req_s": 13.31215195006775,
+    "per_node_counts": {
+      "node-c": 31,
+      "node-a": 86,
+      "node-b": 33
+    },
+    "load_distribution_std": 25.46893532652409,
+    "avg_poll_cycle_ms": 106.77922042933378,
+    "rep": 2,
+    "seed": 102
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 271.73935413360596,
+    "latency_median_ms": 149.19030666351318,
+    "latency_p90_ms": 659.7838401794434,
+    "latency_stdev_ms": 296.0392381295466,
+    "throughput_req_s": 14.531769664100235,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 3,
+    "seed": 103
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 172.2028684616089,
+    "latency_median_ms": 117.75696277618408,
+    "latency_p90_ms": 364.0124797821045,
+    "latency_stdev_ms": 174.18324806656582,
+    "throughput_req_s": 14.729078691616024,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 3,
+    "seed": 103
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 306.9830513000488,
+    "latency_median_ms": 214.11168575286865,
+    "latency_p90_ms": 685.4398250579834,
+    "latency_stdev_ms": 254.21313644849258,
+    "throughput_req_s": 14.569391406224382,
+    "per_node_counts": {
+      "node-a": 80,
+      "node-b": 49,
+      "node-c": 21
+    },
+    "load_distribution_std": 24.097026095903757,
+    "avg_poll_cycle_ms": 273.4064566783416,
+    "rep": 3,
+    "seed": 103
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 293.89033158620197,
+    "latency_median_ms": 180.70602416992188,
+    "latency_p90_ms": 709.9165916442871,
+    "latency_stdev_ms": 257.23480262833357,
+    "throughput_req_s": 14.733064234173876,
+    "per_node_counts": {
+      "node-a": 60,
+      "node-c": 39,
+      "node-b": 51
+    },
+    "load_distribution_std": 8.602325267042627,
+    "avg_poll_cycle_ms": 154.72861643760436,
+    "rep": 3,
+    "seed": 103
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 224.3469508488973,
+    "latency_median_ms": 125.58877468109131,
+    "latency_p90_ms": 552.8810024261475,
+    "latency_stdev_ms": 210.44299683010433,
+    "throughput_req_s": 13.801893282440044,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 4,
+    "seed": 104
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 142.68544673919678,
+    "latency_median_ms": 108.94715785980225,
+    "latency_p90_ms": 252.6388168334961,
+    "latency_stdev_ms": 101.67362431345093,
+    "throughput_req_s": 13.819614060718205,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 4,
+    "seed": 104
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 406.46026452382404,
+    "latency_median_ms": 304.77261543273926,
+    "latency_p90_ms": 894.829273223877,
+    "latency_stdev_ms": 359.5906466727654,
+    "throughput_req_s": 13.498395017485816,
+    "per_node_counts": {
+      "node-a": 70,
+      "node-b": 53,
+      "node-c": 27
+    },
+    "load_distribution_std": 17.682382946499793,
+    "avg_poll_cycle_ms": 329.55978197209976,
+    "rep": 4,
+    "seed": 104
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 254.92934226989746,
+    "latency_median_ms": 193.83609294891357,
+    "latency_p90_ms": 528.1105041503906,
+    "latency_stdev_ms": 183.64640201298744,
+    "throughput_req_s": 13.741638870131682,
+    "per_node_counts": {
+      "node-a": 75,
+      "node-b": 37,
+      "node-c": 38
+    },
+    "load_distribution_std": 17.682382946499793,
+    "avg_poll_cycle_ms": 137.9351450337304,
+    "rep": 4,
+    "seed": 104
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 564.5029020309448,
+    "latency_median_ms": 134.81926918029785,
+    "latency_p90_ms": 2356.738805770874,
+    "latency_stdev_ms": 878.9618154366651,
+    "throughput_req_s": 11.993451832605203,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 5,
+    "seed": 105
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 182.5254694620768,
+    "latency_median_ms": 134.8179578781128,
+    "latency_p90_ms": 396.49486541748047,
+    "latency_stdev_ms": 139.11361303961598,
+    "throughput_req_s": 14.855304099634536,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 5,
+    "seed": 105
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 428.2155974706014,
+    "latency_median_ms": 298.44915866851807,
+    "latency_p90_ms": 1043.2629585266113,
+    "latency_stdev_ms": 367.3041772398457,
+    "throughput_req_s": 14.364769425401324,
+    "per_node_counts": {
+      "node-a": 62,
+      "node-b": 60,
+      "node-c": 28
+    },
+    "load_distribution_std": 15.57776192739723,
+    "avg_poll_cycle_ms": 331.9679796695709,
+    "rep": 5,
+    "seed": 105
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 239.7698434193929,
+    "latency_median_ms": 181.46371841430664,
+    "latency_p90_ms": 533.6339473724365,
+    "latency_stdev_ms": 192.54043957360818,
+    "throughput_req_s": 14.798494327643237,
+    "per_node_counts": {
+      "node-c": 45,
+      "node-a": 67,
+      "node-b": 38
+    },
+    "load_distribution_std": 12.355835328567093,
+    "avg_poll_cycle_ms": 121.10657887916042,
+    "rep": 5,
+    "seed": 105
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 296.6492493947347,
+    "latency_median_ms": 126.46365165710449,
+    "latency_p90_ms": 903.4018516540527,
+    "latency_stdev_ms": 362.81591794689285,
+    "throughput_req_s": 13.283709223515052,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 6,
+    "seed": 106
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 168.38914076487222,
+    "latency_median_ms": 110.91196537017822,
+    "latency_p90_ms": 354.3121814727783,
+    "latency_stdev_ms": 170.36506705343533,
+    "throughput_req_s": 14.20346708796727,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 6,
+    "seed": 106
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 235.42999108632407,
+    "latency_median_ms": 191.20609760284424,
+    "latency_p90_ms": 549.5197772979736,
+    "latency_stdev_ms": 171.95630041132725,
+    "throughput_req_s": 13.984630380288804,
+    "per_node_counts": {
+      "node-a": 91,
+      "node-b": 49,
+      "node-c": 10
+    },
+    "load_distribution_std": 33.075670817082454,
+    "avg_poll_cycle_ms": 223.16011905670166,
+    "rep": 6,
+    "seed": 106
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 219.33079719543457,
+    "latency_median_ms": 173.1894016265869,
+    "latency_p90_ms": 441.38574600219727,
+    "latency_stdev_ms": 176.97110800165663,
+    "throughput_req_s": 13.85818454816705,
+    "per_node_counts": {
+      "node-b": 52,
+      "node-a": 71,
+      "node-c": 27
+    },
+    "load_distribution_std": 18.01850900231944,
+    "avg_poll_cycle_ms": 115.16865683190616,
+    "rep": 6,
+    "seed": 106
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 395.7238308588664,
+    "latency_median_ms": 146.02482318878174,
+    "latency_p90_ms": 1182.5439929962158,
+    "latency_stdev_ms": 482.3326320888665,
+    "throughput_req_s": 14.341223435840613,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 7,
+    "seed": 107
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 228.31771532694498,
+    "latency_median_ms": 130.63359260559082,
+    "latency_p90_ms": 552.4880886077881,
+    "latency_stdev_ms": 283.07031534657665,
+    "throughput_req_s": 16.48991895783088,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 7,
+    "seed": 107
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 464.54658031463623,
+    "latency_median_ms": 316.33460521698,
+    "latency_p90_ms": 1132.1995258331299,
+    "latency_stdev_ms": 419.2183459479455,
+    "throughput_req_s": 15.299032087193348,
+    "per_node_counts": {
+      "node-a": 76,
+      "node-b": 38,
+      "node-c": 36
+    },
+    "load_distribution_std": 18.40289832245635,
+    "avg_poll_cycle_ms": 441.2182724994162,
+    "rep": 7,
+    "seed": 107
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 241.62902037302652,
+    "latency_median_ms": 185.58061122894287,
+    "latency_p90_ms": 478.1758785247803,
+    "latency_stdev_ms": 188.16997644039728,
+    "throughput_req_s": 15.940188215376846,
+    "per_node_counts": {
+      "node-a": 86,
+      "node-c": 30,
+      "node-b": 34
+    },
+    "load_distribution_std": 25.508168626278653,
+    "avg_poll_cycle_ms": 142.02682698359254,
+    "rep": 7,
+    "seed": 107
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 588.9883820215861,
+    "latency_median_ms": 147.70257472991943,
+    "latency_p90_ms": 1851.2485027313232,
+    "latency_stdev_ms": 725.8684617121335,
+    "throughput_req_s": 12.935266060432982,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 8,
+    "seed": 108
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 170.2201747894287,
+    "latency_median_ms": 112.12170124053955,
+    "latency_p90_ms": 385.3752613067627,
+    "latency_stdev_ms": 131.6361209286897,
+    "throughput_req_s": 14.409391081418908,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 8,
+    "seed": 108
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 327.38133907318115,
+    "latency_median_ms": 228.22225093841553,
+    "latency_p90_ms": 732.8915596008301,
+    "latency_stdev_ms": 264.2676706190994,
+    "throughput_req_s": 14.113097499203995,
+    "per_node_counts": {
+      "node-a": 53,
+      "node-b": 56,
+      "node-c": 41
+    },
+    "load_distribution_std": 6.48074069840786,
+    "avg_poll_cycle_ms": 303.97819828342745,
+    "rep": 8,
+    "seed": 108
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 248.94464015960693,
+    "latency_median_ms": 191.81537628173828,
+    "latency_p90_ms": 539.3276214599609,
+    "latency_stdev_ms": 194.35985260584624,
+    "throughput_req_s": 14.379337929649292,
+    "per_node_counts": {
+      "node-a": 72,
+      "node-c": 30,
+      "node-b": 48
+    },
+    "load_distribution_std": 17.204650534085253,
+    "avg_poll_cycle_ms": 130.46514171443573,
+    "rep": 8,
+    "seed": 108
+  },
+  {
+    "strategy": "round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 282.2214396794637,
+    "latency_median_ms": 125.9070634841919,
+    "latency_p90_ms": 917.5305366516113,
+    "latency_stdev_ms": 369.4265286006371,
+    "throughput_req_s": 13.235501087184685,
+    "per_node_counts": {
+      "node-a": 50,
+      "node-b": 50,
+      "node-c": 50
+    },
+    "load_distribution_std": 0.0,
+    "rep": 9,
+    "seed": 109
+  },
+  {
+    "strategy": "weighted_round_robin",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 128.15966924031576,
+    "latency_median_ms": 112.41269111633301,
+    "latency_p90_ms": 236.8621826171875,
+    "latency_stdev_ms": 70.54797349662338,
+    "throughput_req_s": 13.533786064570776,
+    "per_node_counts": {
+      "node-a": 68,
+      "node-b": 48,
+      "node-c": 34
+    },
+    "load_distribution_std": 13.9522996909709,
+    "rep": 9,
+    "seed": 109
+  },
+  {
+    "strategy": "ml_argmin_baseline",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 292.4424648284912,
+    "latency_median_ms": 266.00563526153564,
+    "latency_p90_ms": 521.3069915771484,
+    "latency_stdev_ms": 181.5620463037865,
+    "throughput_req_s": 13.500063665213418,
+    "per_node_counts": {
+      "node-a": 56,
+      "node-b": 63,
+      "node-c": 31
+    },
+    "load_distribution_std": 13.73559851869101,
+    "avg_poll_cycle_ms": 275.60201713017057,
+    "rep": 9,
+    "seed": 109
+  },
+  {
+    "strategy": "ml_softmax_propuesto",
+    "n_requests": 150,
+    "n_ok": 150,
+    "n_fail": 0,
+    "latency_mean_ms": 232.7535359064738,
+    "latency_median_ms": 170.6547737121582,
+    "latency_p90_ms": 448.86326789855957,
+    "latency_stdev_ms": 185.32610290632164,
+    "throughput_req_s": 13.514614380664165,
+    "per_node_counts": {
+      "node-a": 67,
+      "node-b": 53,
+      "node-c": 30
+    },
+    "load_distribution_std": 15.253414918196734,
+    "avg_poll_cycle_ms": 119.84367777661579,
+    "rep": 9,
+    "seed": 109
+  }
+]

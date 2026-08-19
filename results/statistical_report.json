@@ -1,0 +1,27 @@
+{
+  "anova": {
+    "f_statistic": 109.47703988527432,
+    "p_value": 5.208873628615271e-69,
+    "significant": "True",
+    "kruskal_h": 427.5316465314333,
+    "kruskal_p": 2.4050217567061504e-92,
+    "groups": [
+      "round_robin",
+      "weighted_round_robin",
+      "ml_argmin_baseline",
+      "ml_softmax_propuesto"
+    ],
+    "tukey_summary": "                   Multiple Comparison of Means - Tukey HSD, FWER=0.05                   \n=========================================================================================\n        group1                 group2          meandiff p-adj    lower     upper   reject\n-----------------------------------------------------------------------------------------\n  ML-argmin (baseline) ML-softmax (propuesto) -121.0771    0.0 -152.9506  -89.2036   True\n  ML-argmin (baseline)            Round Robin  -25.9065 0.1569  -57.7799     5.967  False\n  ML-argmin (baseline)   Weighted Round Robin -200.1409    0.0 -232.0144 -168.2674   True\nML-softmax (propuesto)            Round Robin   95.1707    0.0   63.2972  127.0441   True\nML-softmax (propuesto)   Weighted Round Robin  -79.0638    0.0 -110.9373  -47.1903   True\n           Round Robin   Weighted Round Robin -174.2344    0.0 -206.1079  -142.361   True\n-----------------------------------------------------------------------------------------"
+  },
+  "key_comparison_h3": {
+    "n_reps": 10,
+    "mean_softmax_ms": 240.82580868403116,
+    "mean_argmin_ms": 361.9029110272726,
+    "mean_diff_ms": 121.07710234324136,
+    "pct_improvement": 33.45568622246234,
+    "t_statistic": -3.491907750074776,
+    "p_value": 0.006809671805151155,
+    "cohens_d": 1.6574206866109975,
+    "significant": "True"
+  }
+}

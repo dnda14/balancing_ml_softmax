@@ -1,0 +1,7 @@
+flask==3.0.3
+requests==2.32.3
+numpy==1.26.4
+catboost==1.2.7
+scipy==1.13.1
+statsmodels==0.14.2
+matplotlib==3.9.0
