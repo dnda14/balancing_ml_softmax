@@ -3,45 +3,42 @@
 1. DISTRIBUCIÓN DE TRÁFICO DURANTE LA FALLA (Promedio por repetición)
 ================================================================================
 
-ML-Argmin (Total peticiones promedio: 213.0)
-  node-a: 73.3 peticiones (34.4%)
-  node-b: 44.3 peticiones (20.8%)
-  node-c: 95.3 peticiones (44.8%)
+ML-Argmin (Total peticiones promedio: 506.5)
+  node-c: 506.5 peticiones (100.0%)
 
-ML-Softmax (Total peticiones promedio: 213.0)
-  node-a: 53.0 peticiones (24.9%)
-  node-b: 82.3 peticiones (38.7%)
-  node-c: 77.7 peticiones (36.5%)
+ML-Softmax (Total peticiones promedio: 430.0)
+  node-a: 167.5 peticiones (39.0%)
+  node-b: 144.0 peticiones (33.5%)
+  node-c: 118.5 peticiones (27.6%)
 
-Round Robin (Total peticiones promedio: 213.0)
-  node-a: 71.0 peticiones (33.3%)
-  node-b: 71.0 peticiones (33.3%)
-  node-c: 71.0 peticiones (33.3%)
+Round Robin (Total peticiones promedio: 430.0)
+  node-a: 143.0 peticiones (33.3%)
+  node-b: 144.0 peticiones (33.5%)
+  node-c: 143.0 peticiones (33.3%)
 
-Weighted Round Robin (Total peticiones promedio: 213.0)
-  node-a: 97.0 peticiones (45.5%)
-  node-b: 67.0 peticiones (31.5%)
-  node-c: 49.0 peticiones (23.0%)
+Weighted Round Robin (Total peticiones promedio: 418.0)
+  node-a: 184.0 peticiones (44.0%)
+  node-b: 136.0 peticiones (32.5%)
+  node-c: 98.0 peticiones (23.4%)
 
 ================================================================================
 2. LATENCIA PROMEDIO DURANTE LA FALLA
 ================================================================================
-ML-Argmin                :  6245.0 ± 4392.9 ms
-ML-Softmax               :  1126.5 ± 498.2 ms
-Round Robin              :  1092.8 ± 169.5 ms
-Weighted Round Robin     :  2268.3 ± 323.7 ms
+ML-Argmin                : 12210.9 ± 255.0 ms
+ML-Softmax               :  1588.8 ± 564.1 ms
+Round Robin              :   901.7 ± 158.4 ms
+Weighted Round Robin     :  2965.2 ± 139.2 ms
 
 ================================================================================
 3. PRUEBA DE SIGNIFICANCIA (H3): WRR vs ML-Softmax (Post-Falla)
 ================================================================================
-  n repeticiones pareadas = 3
-  Media ML-Softmax        = 1126.5 ms
-  Media WRR               = 2268.3 ms
-  Diferencia              = 1141.8 ms  (50.3% de reducción de latencia)
+  n repeticiones pareadas = 2
+  Media ML-Softmax        = 1588.8 ms
+  Media WRR               = 2965.2 ms
+  Diferencia              = 1376.5 ms  (46.4% de reducción de latencia)
 
-  Prueba T-Pareada p-valor = 0.015652
-  Mann-Whitney U p-valor   = 0.100000
-  Cohen's d (Tamaño de efecto) = 2.219 (grande)
+  Prueba T-Pareada p-valor = 0.300723
+  Mann-Whitney U p-valor   = 0.333333
+  Cohen's d (Tamaño de efecto) = 2.369 (grande)
 
-=> RESULTADO: La diferencia es ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05).
-   Se confirma matemáticamente que ML-Softmax resiste mejor la falla que WRR.
+=> RESULTADO: La diferencia NO es significativa (p >= 0.05). Se necesitan más repeticiones.

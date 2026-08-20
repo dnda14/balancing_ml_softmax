@@ -90,6 +90,16 @@ def stats():
         })
 
 
+@app.route("/reset", methods=["POST"])
+def reset():
+    global _active_requests, _completed_requests, _recent_latencies
+    with _lock:
+        _active_requests = 0
+        _completed_requests = 0
+        _recent_latencies.clear()
+    return jsonify({"status": "reset", "node": NODE_ID})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "node": NODE_ID})

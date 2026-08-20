@@ -34,6 +34,14 @@ def ensure_docker_nodes(nodes, timeout_s=30):
     return None  # no hay 'procs' que gestionar; el ciclo de vida lo maneja Docker
 
 
+def reset_all_nodes(nodes):
+    for n in nodes:
+        try:
+            requests.post(n["url"] + "/reset", timeout=2.0)
+        except Exception as e:
+            print(f"Warning: Failed to reset node {n['id']} at {n['url']}: {e}")
+
+
 def noop_teardown(_handle):
     """No hace nada: en modo Docker, los contenedores se detienen con
     'docker compose down', no desde este script."""

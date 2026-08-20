@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from catboost import CatBoostRegressor
 
 from common.config import LOCAL_NODES, NODE_SPEED, WRR_WEIGHTS
-from common.docker_workers import ensure_docker_nodes
+from common.docker_workers import ensure_docker_nodes, reset_all_nodes
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from loadgen.client import run_load
@@ -85,6 +85,8 @@ def main():
         
         # 1. Round Robin
         print("\n--- Ejecutando Round Robin ---")
+        reset_all_nodes(LOCAL_NODES)
+        time.sleep(1)
         rr_strat = RoundRobin(LOCAL_NODES)
         res_rr = run_with_dynamic_change(rr_strat, task_sizes, args.rate, change_delay_s)
         for r in res_rr:
@@ -92,6 +94,8 @@ def main():
             
         # 2. Weighted Round Robin
         print("\n--- Ejecutando Weighted Round Robin ---")
+        reset_all_nodes(LOCAL_NODES)
+        time.sleep(1)
         wrr_strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
         res_wrr = run_with_dynamic_change(wrr_strat, task_sizes, args.rate, change_delay_s)
         for r in res_wrr:
@@ -99,6 +103,8 @@ def main():
             
         # 3. ML-argmin (baseline)
         print("\n--- Ejecutando ML-Argmin ---")
+        reset_all_nodes(LOCAL_NODES)
+        time.sleep(1)
         poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
         poller_argmin.start()
         try:
@@ -111,6 +117,8 @@ def main():
             
         # 4. ML-softmax (propuesto)
         print("\n--- Ejecutando ML-Softmax ---")
+        reset_all_nodes(LOCAL_NODES)
+        time.sleep(1)
         poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
         poller_softmax.start()
         try:
