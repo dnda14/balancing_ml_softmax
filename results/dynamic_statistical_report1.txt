@@ -1,0 +1,47 @@
+
+================================================================================
+1. DISTRIBUCIÓN DE TRÁFICO DURANTE LA FALLA (Promedio por repetición)
+================================================================================
+
+ML-Argmin (Total peticiones promedio: 212.7)
+  node-a: 71.3 peticiones (33.5%)
+  node-b: 54.0 peticiones (25.4%)
+  node-c: 87.4 peticiones (41.1%)
+
+ML-Softmax (Total peticiones promedio: 213.0)
+  node-a: 66.8 peticiones (31.4%)
+  node-b: 82.0 peticiones (38.5%)
+  node-c: 64.2 peticiones (30.1%)
+
+Round Robin (Total peticiones promedio: 213.0)
+  node-a: 71.0 peticiones (33.3%)
+  node-b: 71.0 peticiones (33.3%)
+  node-c: 71.0 peticiones (33.3%)
+
+Weighted Round Robin (Total peticiones promedio: 213.0)
+  node-a: 97.0 peticiones (45.5%)
+  node-b: 67.0 peticiones (31.5%)
+  node-c: 49.0 peticiones (23.0%)
+
+================================================================================
+2. LATENCIA PROMEDIO DURANTE LA FALLA
+================================================================================
+ML-Argmin                :  5923.4 ± 2482.0 ms
+ML-Softmax               :  1381.4 ± 819.4 ms
+Round Robin              :  1371.7 ± 498.8 ms
+Weighted Round Robin     :  2475.2 ± 576.8 ms
+
+================================================================================
+3. PRUEBA DE SIGNIFICANCIA (H3): WRR vs ML-Softmax (Post-Falla)
+================================================================================
+  n repeticiones pareadas = 10
+  Media ML-Softmax        = 1381.4 ms
+  Media WRR               = 2475.2 ms
+  Diferencia              = 1093.9 ms  (44.2% de reducción de latencia)
+
+  Prueba T-Pareada p-valor = 0.004744
+  Mann-Whitney U p-valor   = 0.014019
+  Cohen's d (Tamaño de efecto) = 1.465 (grande)
+
+=> RESULTADO: La diferencia es ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05).
+   Se confirma matemáticamente que ML-Softmax resiste mejor la falla que WRR.

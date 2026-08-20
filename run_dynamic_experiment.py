@@ -3,10 +3,13 @@ import os
 import time
 import subprocess
 import threading
+import argparse
+import csv
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import csv
+import numpy as np
+from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
 from catboost import CatBoostRegressor
@@ -16,20 +19,20 @@ from common.docker_workers import ensure_docker_nodes
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from loadgen.client import run_load
-from balancers.strategies import WeightedRoundRobin, MLSoftmax
+from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax
 
 
 def change_cpu_limit(container, cpus):
     print(f"\n[!] Cambiando limite de CPU de {container} a {cpus}...")
     subprocess.run(["docker", "update", "--cpus", str(cpus), container], check=True, capture_output=True)
-    print(f"[!] Limite actualizado.")
+    print(f"[!] Limite actualizado a {cpus}.")
 
 
 def run_with_dynamic_change(strategy, task_sizes, arrival_rate, change_delay_s):
     # Restaurar a 1.0 antes de empezar
     change_cpu_limit("lb_thesis-node-a-1", 1.0)
     
-    # Hilo para aplicar la degradacion a mitad del experimento
+    # Hilo para aplicar la degradacion
     def degradator():
         time.sleep(change_delay_s)
         change_cpu_limit("lb_thesis-node-a-1", 0.4)
@@ -43,10 +46,11 @@ def run_with_dynamic_change(strategy, task_sizes, arrival_rate, change_delay_s):
     # Asegurar que el hilo termine
     t.join()
     
-    # Calcular timestamp relativo a 0
+    # Calcular timestamp relativo a 0 y asignar fase
     for r in res:
         if r and r["ok"]:
             r["rel_time"] = r["t_start"] - t0_exp
+            r["phase"] = "post" if r["rel_time"] >= change_delay_s else "pre"
             
     # Restaurar otra vez al terminar
     change_cpu_limit("lb_thesis-node-a-1", 1.0)
@@ -55,78 +59,122 @@ def run_with_dynamic_change(strategy, task_sizes, arrival_rate, change_delay_s):
 
 
 def main():
-    print("Iniciando escenario dinamico...")
-    n_requests = 400
-    arrival_rate = 14.5
-    seed = 42
-    # El experimento dura aprox 400 / 14.5 = 27.5 segundos
-    # Degradar a los 13 segundos
-    change_delay_s = 13.0
+    parser = argparse.ArgumentParser(description="Escenario 5: Fluctuaciones Dinámicas (Concept Drift)")
+    parser.add_argument("--reps", type=int, default=5, help="Número de repeticiones")
+    parser.add_argument("--n", type=int, default=400, help="Peticiones por repetición")
+    parser.add_argument("--rate", type=float, default=14.5, help="Tasa de llegada (peticiones/seg)")
+    args = parser.parse_args()
+
+    print(f"Iniciando escenario dinamico con {args.reps} repeticiones de {args.n} peticiones a {args.rate} req/s...")
+    
+    # Degradar aprox a la mitad del experimento
+    change_delay_s = (args.n / args.rate) * 0.45 
+    print(f"La degradación ocurrirá a los {change_delay_s:.1f} segundos.")
     
     ensure_docker_nodes(LOCAL_NODES)
     
-    task_sizes = generate_task_sizes(n_requests, seed=seed)
-    
-    # 1. Ejecutar WRR
-    print("\n--- Ejecutando Weighted Round Robin ---")
-    wrr_strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
-    res_wrr = run_with_dynamic_change(wrr_strat, task_sizes, arrival_rate, change_delay_s)
-    
-    # 2. Ejecutar ML-Softmax
-    print("\n--- Ejecutando ML-Softmax ---")
     model = CatBoostRegressor()
     model.load_model("data/model.cbm")
-    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-    poller.start()
-    try:
-        ml_strat = MLSoftmax(LOCAL_NODES, model, poller, NODE_SPEED, temperature_fraction=0.20)
-        res_ml = run_with_dynamic_change(ml_strat, task_sizes, arrival_rate, change_delay_s)
-    finally:
-        poller.stop()
+    
+    all_raw_data = []
+
+    for rep in range(args.reps):
+        seed = 42 + rep
+        print(f"\n========== REPETICIÓN {rep + 1}/{args.reps} (seed={seed}) ==========")
+        task_sizes = generate_task_sizes(args.n, seed=seed)
+        
+        # 1. Round Robin
+        print("\n--- Ejecutando Round Robin ---")
+        rr_strat = RoundRobin(LOCAL_NODES)
+        res_rr = run_with_dynamic_change(rr_strat, task_sizes, args.rate, change_delay_s)
+        for r in res_rr:
+            all_raw_data.append({"strategy": "Round Robin", "rep": rep, **r})
+            
+        # 2. Weighted Round Robin
+        print("\n--- Ejecutando Weighted Round Robin ---")
+        wrr_strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
+        res_wrr = run_with_dynamic_change(wrr_strat, task_sizes, args.rate, change_delay_s)
+        for r in res_wrr:
+            all_raw_data.append({"strategy": "Weighted Round Robin", "rep": rep, **r})
+            
+        # 3. ML-argmin (baseline)
+        print("\n--- Ejecutando ML-Argmin ---")
+        poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
+        poller_argmin.start()
+        try:
+            argmin_strat = MLArgmin(LOCAL_NODES, model, poller_argmin, NODE_SPEED)
+            res_argmin = run_with_dynamic_change(argmin_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_argmin:
+                all_raw_data.append({"strategy": "ML-Argmin", "rep": rep, **r})
+        finally:
+            poller_argmin.stop()
+            
+        # 4. ML-softmax (propuesto)
+        print("\n--- Ejecutando ML-Softmax ---")
+        poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+        poller_softmax.start()
+        try:
+            softmax_strat = MLSoftmax(LOCAL_NODES, model, poller_softmax, NODE_SPEED, temperature_fraction=0.20)
+            res_softmax = run_with_dynamic_change(softmax_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_softmax:
+                all_raw_data.append({"strategy": "ML-Softmax", "rep": rep, **r})
+        finally:
+            poller_softmax.stop()
 
     # Guardar CSV
     os.makedirs("results", exist_ok=True)
-    with open("results/dynamic_experiment.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["strategy", "rel_time", "node", "task_size", "latency_ms"])
+    csv_path = "results/dynamic_experiment.csv"
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["strategy", "rep", "phase", "rel_time", "node", "task_size", "latency_ms"])
         writer.writeheader()
-        for r in res_wrr:
-            writer.writerow({"strategy": "WRR", "rel_time": r["rel_time"], "node": r["node"], "task_size": r["task_size"], "latency_ms": r["latency_ms"]})
-        for r in res_ml:
-            writer.writerow({"strategy": "ML-Softmax", "rel_time": r["rel_time"], "node": r["node"], "task_size": r["task_size"], "latency_ms": r["latency_ms"]})
+        for r in all_raw_data:
+            writer.writerow({
+                "strategy": r["strategy"], "rep": r["rep"], "phase": r["phase"], 
+                "rel_time": r["rel_time"], "node": r["node"], 
+                "task_size": r["task_size"], "latency_ms": r["latency_ms"]
+            })
 
-    print("\n[V] Datos crudos guardados en results/dynamic_experiment.csv")
+    print(f"\n[V] Datos crudos de {args.reps} repeticiones guardados en {csv_path}")
 
-    # Generar grafico
+    # Generar grafico promediado
     plt.figure(figsize=(12, 6))
     
-    # Extraer data
-    t_wrr = [r["rel_time"] for r in res_wrr]
-    l_wrr = [r["latency_ms"] for r in res_wrr]
-    
-    t_ml = [r["rel_time"] for r in res_ml]
-    l_ml = [r["latency_ms"] for r in res_ml]
+    # Agrupar por estrategia y bucket de tiempo (segundo exacto)
+    bucketed_data = defaultdict(lambda: defaultdict(list))
+    for r in all_raw_data:
+        bucket = int(r["rel_time"])
+        bucketed_data[r["strategy"]][bucket].append(r["latency_ms"])
+        
+    colors = {
+        "Round Robin": "gray",
+        "Weighted Round Robin": "red",
+        "ML-Argmin": "orange",
+        "ML-Softmax": "blue"
+    }
 
     def moving_average(x, w):
-        import numpy as np
         return np.convolve(x, np.ones(w), 'valid') / w
-    
-    w = 15
-    if len(t_wrr) > w:
-        plt.plot(t_wrr[w-1:], moving_average(l_wrr, w), label="WRR (Pesos estaticos)", color="red", linewidth=2)
-    if len(t_ml) > w:
-        plt.plot(t_ml[w-1:], moving_average(l_ml, w), label="ML-Softmax (Propuesto)", color="blue", linewidth=2)
+
+    for strat, buckets in bucketed_data.items():
+        sorted_buckets = sorted(buckets.keys())
+        avg_latencies = [np.mean(buckets[b]) for b in sorted_buckets]
         
-    plt.axvline(x=change_delay_s, color='black', linestyle='--', label=f'Degradacion node-a (t={change_delay_s}s)')
+        w = 3 # Ventana de media móvil más pequeña porque ya agrupamos por segundo
+        if len(sorted_buckets) > w:
+            plt.plot(sorted_buckets[w-1:], moving_average(avg_latencies, w), 
+                     label=strat, color=colors[strat], linewidth=2)
+        
+    plt.axvline(x=change_delay_s, color='black', linestyle='--', label=f'Degradacion node-a (t={change_delay_s:.1f}s)')
     
-    plt.title("Adaptabilidad ante cambios dinamicos en la capacidad (Media movil latencia)")
+    plt.title(f"Adaptabilidad ante fallas de capacidad (Promedio sobre {args.reps} repeticiones)")
     plt.xlabel("Tiempo del experimento (segundos)")
-    plt.ylabel("Latencia (ms)")
+    plt.ylabel("Latencia Promedio (ms)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.savefig("results/dynamic_experiment_plot.png")
-    print("[V] Grafico guardado en results/dynamic_experiment_plot.png")
+    print("[V] Grafico promediado guardado en results/dynamic_experiment_plot.png")
 
 if __name__ == "__main__":
     main()
