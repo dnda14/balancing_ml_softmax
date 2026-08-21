@@ -15,11 +15,19 @@ import random
 
 
 def build_features(stats: dict, task_size: float, node_speed: float) -> list:
-    """Vector de características usado por el modelo predictivo."""
+    """Vector de características usado por el modelo predictivo.
+
+    Incluye features de tendencia (delta) que capturan la *dirección* del
+    cambio en el nodo entre ciclos consecutivos del StatsPoller:
+      - delta_active_requests > 0  →  la cola está creciendo (empeorando)
+      - delta_avg_latency_ms > 0   →  la latencia está subiendo (empeorando)
+    """
     return [
         task_size,
         stats.get("active_requests", 0),
         stats.get("avg_recent_latency_ms", 0.0),
+        stats.get("delta_active_requests", 0),
+        stats.get("delta_avg_latency_ms", 0.0),
     ]
 
 

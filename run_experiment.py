@@ -17,7 +17,7 @@ from catboost import CatBoostRegressor
 
 from common.config import LOCAL_NODES, NODE_SPEED, WRR_WEIGHTS
 from common.local_workers import start_local_workers, stop_local_workers
-from common.docker_workers import ensure_docker_nodes, noop_teardown, reset_all_nodes
+from common.docker_workers import ensure_docker_nodes, noop_teardown, reset_all_nodes, restart_node_containers
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from loadgen.client import run_load
@@ -108,10 +108,9 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
             })
 
     # --- 1. Round Robin ---
-    handle = start_fn(LOCAL_NODES)
     if mode == "docker":
-        reset_all_nodes(LOCAL_NODES)
-        time.sleep(1)
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
     try:
         strat = RoundRobin(LOCAL_NODES)
         res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
@@ -120,13 +119,11 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
         _collect_raw("round_robin", res)
     finally:
         stop_fn(handle)
-    time.sleep(1)
 
     # --- 2. Weighted Round Robin ---
-    handle = start_fn(LOCAL_NODES)
     if mode == "docker":
-        reset_all_nodes(LOCAL_NODES)
-        time.sleep(1)
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
     try:
         strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
         res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
@@ -135,13 +132,11 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
         _collect_raw("weighted_round_robin", res)
     finally:
         stop_fn(handle)
-    time.sleep(1)
 
     # --- 3. ML-argmin (baseline, staleness por sondeo SECUENCIAL) ---
-    handle = start_fn(LOCAL_NODES)
     if mode == "docker":
-        reset_all_nodes(LOCAL_NODES)
-        time.sleep(1)
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
     poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
     poller.start()
     try:
@@ -155,13 +150,11 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
     finally:
         poller.stop()
         stop_fn(handle)
-    time.sleep(1)
 
     # --- 4. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
-    handle = start_fn(LOCAL_NODES)
     if mode == "docker":
-        reset_all_nodes(LOCAL_NODES)
-        time.sleep(1)
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
     poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
     poller.start()
     try:

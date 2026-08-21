@@ -23,7 +23,12 @@ class StatsPoller:
         self.timeout_s = timeout_s
 
         self.cache = {
-            n["id"]: {"active_requests": 0, "avg_recent_latency_ms": 0.0}
+            n["id"]: {
+                "active_requests": 0,
+                "avg_recent_latency_ms": 0.0,
+                "delta_active_requests": 0,
+                "delta_avg_latency_ms": 0.0,
+            }
             for n in nodes
         }
         self.last_update_ts = {n["id"]: 0.0 for n in nodes}
@@ -41,6 +46,15 @@ class StatsPoller:
             r = requests.get(node["url"] + "/stats", timeout=self.timeout_s)
             data = r.json()
             with self._lock:
+                prev = self.cache[node["id"]]
+                # Features de tendencia: positivo = empeorando, negativo = mejorando
+                data["delta_active_requests"] = (
+                    data.get("active_requests", 0) - prev.get("active_requests", 0)
+                )
+                data["delta_avg_latency_ms"] = (
+                    data.get("avg_recent_latency_ms", 0.0)
+                    - prev.get("avg_recent_latency_ms", 0.0)
+                )
                 self.cache[node["id"]] = data
                 self.last_update_ts[node["id"]] = time.time()
         except Exception:

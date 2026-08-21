@@ -5,6 +5,14 @@ Envía tareas a nodos elegidos aleatoriamente (para cubrir una variedad de
 combinaciones carga/nodo/tamaño de tarea), registra las características
 observadas en el momento de la decisión junto con la latencia REAL medida,
 y entrena un CatBoostRegressor para predecir la latencia esperada.
+
+IMPORTANTE: Para que el modelo aprenda a predecir latencia en escenarios de
+degradación (concept drift), se recolectan datos en DOS fases:
+  Fase 1: Carga normal (todos los nodos en capacidad plena)
+  Fase 2: Degradación (se reduce la CPU de node-a a 0.4 durante la recolección)
+Esto entrena al modelo con el rango completo de active_requests, avg_latency
+y los deltas de tendencia, evitando la saturación que ocurre si solo se
+entrena con datos de condiciones estables.
 """
 import sys
 import os
@@ -12,6 +20,8 @@ import time
 import random
 import json
 import argparse
+import subprocess
+import threading
 import numpy as np
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +30,7 @@ from catboost import CatBoostRegressor
 sys.path.insert(0, os.path.dirname(__file__))
 from common.config import LOCAL_NODES, NODE_SPEED
 from common.local_workers import start_local_workers, stop_local_workers
-from common.docker_workers import ensure_docker_nodes, noop_teardown
+from common.docker_workers import ensure_docker_nodes, noop_teardown, restart_node_containers
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from balancers.strategies import build_features
@@ -43,45 +53,84 @@ def collect_one(node, task_size, poller, rows, idx):
     rows[idx] = (feats, latency)
 
 
+def _run_collection_batch(n_samples, arrival_rate, seed, poller, assign_probs):
+    """Recolecta un lote de muestras con el poller activo."""
+    rng = random.Random(seed)
+    task_sizes = generate_task_sizes(n_samples, seed=seed)
+    rows = [None] * n_samples
+
+    inter_arrivals = np.random.default_rng(seed).exponential(1.0 / arrival_rate, size=n_samples)
+    arrival_times = np.cumsum(inter_arrivals)
+    t_start = time.time()
+
+    with ThreadPoolExecutor(max_workers=60) as ex:
+        futures = []
+        for i, task_size in enumerate(task_sizes):
+            target = t_start + arrival_times[i]
+            now = time.time()
+            if target > now:
+                time.sleep(target - now)
+            node = rng.choices(LOCAL_NODES, weights=assign_probs, k=1)[0]
+            futures.append(ex.submit(collect_one, node, task_size, poller, rows, i))
+        for f in futures:
+            f.result()
+
+    return [(r[0], r[1]) for r in rows if r is not None and r[1] is not None]
+
+
 def collect_training_data(n_samples=600, arrival_rate=11.0, seed=42, mode="local", stats_latency_ms=0):
     start_fn, stop_fn = get_runtime(mode, stats_latency_ms)
     handle = start_fn(LOCAL_NODES)
     poller = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
     poller.start()
 
+    speeds = [NODE_SPEED[n["id"]] for n in LOCAL_NODES]
+    total_speed = sum(speeds)
+    assign_probs = [s / total_speed for s in speeds]
+
+    all_rows = []
+
     try:
-        rng = random.Random(seed)
-        # probabilidad de asignación proporcional a la capacidad del nodo,
-        # para no saturar el nodo más lento durante la recolección de datos
-        speeds = [NODE_SPEED[n["id"]] for n in LOCAL_NODES]
-        total_speed = sum(speeds)
-        assign_probs = [s / total_speed for s in speeds]
+        # --- Fase 1: Condiciones normales ---
+        print(f"  Fase 1: Recolectando {n_samples} muestras en condiciones normales...")
+        rows_normal = _run_collection_batch(n_samples, arrival_rate, seed, poller, assign_probs)
+        all_rows.extend(rows_normal)
+        print(f"  Fase 1 completada: {len(rows_normal)} muestras.")
 
-        task_sizes = generate_task_sizes(n_samples, seed=seed)
-        rows = [None] * n_samples
+        # --- Fase 2: Con degradación (solo modo Docker) ---
+        if mode == "docker":
+            n_degraded = n_samples // 2  # mitad de muestras en condiciones degradadas
+            print(f"  Fase 2: Recolectando {n_degraded} muestras con node-a degradado (0.4 CPUs)...")
 
-        inter_arrivals = np.random.default_rng(seed).exponential(1.0 / arrival_rate, size=n_samples)
-        arrival_times = np.cumsum(inter_arrivals)
-        t_start = time.time()
+            # Degradar node-a
+            subprocess.run(
+                ["docker", "update", "--cpus", "0.4", "lb_thesis-node-a-1"],
+                check=True, capture_output=True,
+            )
 
-        with ThreadPoolExecutor(max_workers=60) as ex:
-            futures = []
-            for i, task_size in enumerate(task_sizes):
-                target = t_start + arrival_times[i]
-                now = time.time()
-                if target > now:
-                    time.sleep(target - now)
-                node = rng.choices(LOCAL_NODES, weights=assign_probs, k=1)[0]
-                futures.append(ex.submit(collect_one, node, task_size, poller, rows, i))
-            for f in futures:
-                f.result()
+            # Esperar un momento para que el cambio surta efecto en las métricas
+            time.sleep(2)
+
+            rows_degraded = _run_collection_batch(
+                n_degraded, arrival_rate, seed + 1000, poller, assign_probs
+            )
+            all_rows.extend(rows_degraded)
+            print(f"  Fase 2 completada: {len(rows_degraded)} muestras.")
+
+            # Restaurar node-a
+            subprocess.run(
+                ["docker", "update", "--cpus", "1.0", "lb_thesis-node-a-1"],
+                check=True, capture_output=True,
+            )
+            print("  node-a restaurado a 1.0 CPUs.")
+        else:
+            print("  (Fase 2 omitida: solo disponible en modo Docker)")
     finally:
         poller.stop()
         stop_fn(handle)
 
-    rows = [r for r in rows if r is not None and r[1] is not None]
-    X = [r[0] for r in rows]
-    y = [r[1] for r in rows]
+    X = [r[0] for r in all_rows]
+    y = [r[1] for r in all_rows]
     return X, y
 
 
