@@ -19,7 +19,7 @@ from common.docker_workers import ensure_docker_nodes, restart_node_containers
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from loadgen.client import run_load
-from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax
+from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax, LeastConnection, PowerOfTwoChoices
 
 
 def change_cpu_limit(container, cpus):
@@ -99,7 +99,33 @@ def main():
         for r in res_wrr:
             all_raw_data.append({"strategy": "Weighted Round Robin", "rep": rep, **r})
             
-        # 3. ML-argmin (baseline)
+        # 3. Least Connection
+        print("\n--- Ejecutando Least Connection ---")
+        restart_node_containers(LOCAL_NODES)
+        poller_lc = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+        poller_lc.start()
+        try:
+            lc_strat = LeastConnection(LOCAL_NODES, poller_lc)
+            res_lc = run_with_dynamic_change(lc_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_lc:
+                all_raw_data.append({"strategy": "Least Connection", "rep": rep, **r})
+        finally:
+            poller_lc.stop()
+            
+        # 4. Power of Two Choices
+        print("\n--- Ejecutando Power of Two Choices ---")
+        restart_node_containers(LOCAL_NODES)
+        poller_p2c = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+        poller_p2c.start()
+        try:
+            p2c_strat = PowerOfTwoChoices(LOCAL_NODES, poller_p2c)
+            res_p2c = run_with_dynamic_change(p2c_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_p2c:
+                all_raw_data.append({"strategy": "Power of Two Choices", "rep": rep, **r})
+        finally:
+            poller_p2c.stop()
+            
+        # 5. ML-argmin (baseline)
         print("\n--- Ejecutando ML-Argmin ---")
         restart_node_containers(LOCAL_NODES)
         poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
@@ -112,7 +138,7 @@ def main():
         finally:
             poller_argmin.stop()
             
-        # 4. ML-softmax (propuesto)
+        # 6. ML-softmax (propuesto)
         print("\n--- Ejecutando ML-Softmax ---")
         restart_node_containers(LOCAL_NODES)
         poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
@@ -152,6 +178,8 @@ def main():
     colors = {
         "Round Robin": "gray",
         "Weighted Round Robin": "red",
+        "Least Connection": "purple",
+        "Power of Two Choices": "green",
         "ML-Argmin": "orange",
         "ML-Softmax": "blue"
     }

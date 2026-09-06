@@ -73,6 +73,41 @@ class WeightedRoundRobin:
         return best, None
 
 
+class LeastConnection:
+    name = "least_connection"
+
+    def __init__(self, nodes, poller):
+        self.nodes = nodes
+        self.poller = poller
+
+    def select(self, task_size=None):
+        best_node = None
+        min_active = float('inf')
+        for n in self.nodes:
+            stats = self.poller.get_stats(n["id"])
+            active = stats.get("active_requests", 0)
+            if active < min_active:
+                min_active = active
+                best_node = n
+        return best_node, None
+
+
+class PowerOfTwoChoices:
+    name = "power_of_two_choices"
+
+    def __init__(self, nodes, poller):
+        self.nodes = nodes
+        self.poller = poller
+
+    def select(self, task_size=None):
+        n1, n2 = random.sample(self.nodes, 2)
+        stats1 = self.poller.get_stats(n1["id"])
+        stats2 = self.poller.get_stats(n2["id"])
+        if stats1.get("active_requests", 0) <= stats2.get("active_requests", 0):
+            return n1, None
+        return n2, None
+
+
 class MLArgmin:
     """Baseline: réplica del enfoque de Rahimov y Aghayev (2026).
     Selección determinística (argmin) sobre la predicción del modelo."""

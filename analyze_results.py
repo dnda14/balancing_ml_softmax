@@ -32,10 +32,12 @@ from collections import defaultdict
 
 from scipy import stats as sps
 
-STRATEGY_ORDER = ["round_robin", "weighted_round_robin", "ml_argmin_baseline", "ml_softmax_propuesto"]
+STRATEGY_ORDER = ["round_robin", "weighted_round_robin", "least_connection", "power_of_two_choices", "ml_argmin_baseline", "ml_softmax_propuesto"]
 STRATEGY_LABELS = {
     "round_robin": "Round Robin",
     "weighted_round_robin": "Weighted Round Robin",
+    "least_connection": "Least Connection",
+    "power_of_two_choices": "Power of Two Choices",
     "ml_argmin_baseline": "ML-argmin (baseline)",
     "ml_softmax_propuesto": "ML-softmax (propuesto)",
 }

@@ -21,7 +21,7 @@ from common.docker_workers import ensure_docker_nodes, noop_teardown, reset_all_
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
 from loadgen.client import run_load
-from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax
+from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax, LeastConnection, PowerOfTwoChoices
 
 
 def get_runtime(mode, stats_latency_ms):
@@ -133,7 +133,39 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
     finally:
         stop_fn(handle)
 
-    # --- 3. ML-argmin (baseline, staleness por sondeo SECUENCIAL) ---
+    # --- 3. Least Connection ---
+    if mode == "docker":
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
+    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+    poller.start()
+    try:
+        strat = LeastConnection(LOCAL_NODES, poller)
+        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+        _diag(strat.name if hasattr(strat, "name") else "?", res)
+        all_summaries.append(summarize("least_connection", res))
+        _collect_raw("least_connection", res)
+    finally:
+        poller.stop()
+        stop_fn(handle)
+
+    # --- 4. Power of Two Choices ---
+    if mode == "docker":
+        restart_node_containers(LOCAL_NODES)
+    handle = start_fn(LOCAL_NODES)
+    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+    poller.start()
+    try:
+        strat = PowerOfTwoChoices(LOCAL_NODES, poller)
+        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+        _diag(strat.name if hasattr(strat, "name") else "?", res)
+        all_summaries.append(summarize("power_of_two_choices", res))
+        _collect_raw("power_of_two_choices", res)
+    finally:
+        poller.stop()
+        stop_fn(handle)
+
+    # --- 5. ML-argmin (baseline, staleness por sondeo SECUENCIAL) ---
     if mode == "docker":
         restart_node_containers(LOCAL_NODES)
     handle = start_fn(LOCAL_NODES)
@@ -151,7 +183,7 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
         poller.stop()
         stop_fn(handle)
 
-    # --- 4. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
+    # --- 6. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
     if mode == "docker":
         restart_node_containers(LOCAL_NODES)
     handle = start_fn(LOCAL_NODES)
