@@ -13,6 +13,8 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
 from catboost import CatBoostRegressor
+import xgboost as xgb
+import lightgbm as lgb
 
 from common.config import LOCAL_NODES, NODE_SPEED, WRR_WEIGHTS
 from common.docker_workers import ensure_docker_nodes, restart_node_containers
@@ -73,8 +75,19 @@ def main():
     
     ensure_docker_nodes(LOCAL_NODES)
     
-    model = CatBoostRegressor()
-    model.load_model("data/model.cbm")
+    model_cat = CatBoostRegressor()
+    model_cat.load_model("data/model_catboost.cbm")
+    
+    model_xgb = xgb.XGBRegressor()
+    model_xgb.load_model("data/model_xgboost.json")
+    
+    model_lgb = lgb.Booster(model_file="data/model_lightgbm.txt")
+    
+    ml_models = [
+        ("catboost", model_cat),
+        ("xgboost", model_xgb),
+        ("lightgbm", model_lgb)
+    ]
     
     all_raw_data = []
 
@@ -131,7 +144,7 @@ def main():
         poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
         poller_argmin.start()
         try:
-            argmin_strat = MLArgmin(LOCAL_NODES, model, poller_argmin, NODE_SPEED)
+            argmin_strat = MLArgmin(LOCAL_NODES, model_cat, poller_argmin, NODE_SPEED, model_name="catboost")
             res_argmin = run_with_dynamic_change(argmin_strat, task_sizes, args.rate, change_delay_s)
             for r in res_argmin:
                 all_raw_data.append({"strategy": "ML-Argmin", "rep": rep, **r})
@@ -139,17 +152,18 @@ def main():
             poller_argmin.stop()
             
         # 6. ML-softmax (propuesto)
-        print("\n--- Ejecutando ML-Softmax ---")
-        restart_node_containers(LOCAL_NODES)
-        poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-        poller_softmax.start()
-        try:
-            softmax_strat = MLSoftmax(LOCAL_NODES, model, poller_softmax, NODE_SPEED, temperature_fraction=0.20)
-            res_softmax = run_with_dynamic_change(softmax_strat, task_sizes, args.rate, change_delay_s)
-            for r in res_softmax:
-                all_raw_data.append({"strategy": "ML-Softmax", "rep": rep, **r})
-        finally:
-            poller_softmax.stop()
+        for model_name, model_obj in ml_models:
+            print(f"\n--- Ejecutando ML-Softmax ({model_name}) ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+            poller_softmax.start()
+            try:
+                softmax_strat = MLSoftmax(LOCAL_NODES, model_obj, poller_softmax, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
+                res_softmax = run_with_dynamic_change(softmax_strat, task_sizes, args.rate, change_delay_s)
+                for r in res_softmax:
+                    all_raw_data.append({"strategy": softmax_strat.name, "rep": rep, **r})
+            finally:
+                poller_softmax.stop()
 
     # Guardar CSV
     os.makedirs("results", exist_ok=True)

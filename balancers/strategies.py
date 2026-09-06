@@ -12,6 +12,8 @@ Las 4 estrategias de balanceo de carga comparadas en la tesis:
 """
 import math
 import random
+import threading
+import numpy as np
 
 
 def build_features(stats: dict, task_size: float, node_speed: float, staleness_ms: float) -> list:
@@ -111,13 +113,13 @@ class PowerOfTwoChoices:
 class MLArgmin:
     """Baseline: réplica del enfoque de Rahimov y Aghayev (2026).
     Selección determinística (argmin) sobre la predicción del modelo."""
-    name = "ml_argmin"
-
-    def __init__(self, nodes, model, poller, node_speed: dict):
+    
+    def __init__(self, nodes, model, poller, node_speed: dict, model_name: str = "catboost"):
         self.nodes = nodes
         self.model = model
         self.poller = poller
         self.node_speed = node_speed
+        self.name = f"ml_argmin_{model_name}"
 
     def select(self, task_size):
         preds = []
@@ -126,7 +128,7 @@ class MLArgmin:
             staleness = self.poller.get_staleness_ms(n["id"])
             staleness = staleness if staleness is not None else 0.0
             feats = build_features(stats, task_size, self.node_speed[n["id"]], staleness)
-            pred = self.model.predict([feats])[0]
+            pred = self.model.predict(np.array([feats]))[0]
             preds.append(pred)
         best_idx = min(range(len(preds)), key=lambda i: preds[i])
         return self.nodes[best_idx], preds
@@ -137,27 +139,41 @@ class MLSoftmax:
     predicción del modelo, usada junto con recolección concurrente de
     métricas (ver StatsPoller con concurrent=True).
 
+    Mejora clave: contador LOCAL de peticiones en vuelo (pending).
+    Entre ciclos del poller (~100 ms), pueden llegar decenas de peticiones
+    que ven los mismos datos remotos "desactualizados". Sin el contador
+    local, todas eligen el mismo nodo (efecto manada). Con él, cada
+    llamada a select() ve instantáneamente las peticiones que ya se
+    despacharon en este ciclo, porque el contador se incrementa en
+    select() y se decrementa vía on_complete() cuando la petición termina.
+
     La temperatura se escala de forma adaptativa como una fracción de la
     magnitud de las predicciones actuales (en vez de una constante fija),
     porque el rango absoluto de latencias predichas varía mucho según el
     nivel de congestión del sistema en cada momento."""
-    name = "ml_softmax"
 
-    def __init__(self, nodes, model, poller, node_speed: dict, temperature_fraction: float = 0.20):
+    def __init__(self, nodes, model, poller, node_speed: dict, temperature_fraction: float = 0.20, model_name: str = "catboost"):
         self.nodes = nodes
         self.model = model
         self.poller = poller
         self.node_speed = node_speed
         self.temperature_fraction = temperature_fraction
+        self.name = f"ml_softmax_{model_name}"
+        # Contador local de peticiones en vuelo (despachadas pero no terminadas)
+        self._pending = {n["id"]: 0 for n in nodes}
+        self._pending_lock = threading.Lock()
 
     def select(self, task_size):
         preds = []
         for n in self.nodes:
             stats = self.poller.get_stats(n["id"])
+            # Combinar datos remotos del poller con el contador local en tiempo real
+            with self._pending_lock:
+                stats["active_requests"] = stats.get("active_requests", 0) + self._pending[n["id"]]
             staleness = self.poller.get_staleness_ms(n["id"])
             staleness = staleness if staleness is not None else 0.0
             feats = build_features(stats, task_size, self.node_speed[n["id"]], staleness)
-            pred = self.model.predict([feats])[0]
+            pred = self.model.predict(np.array([feats]))[0]
             preds.append(pred)
 
         mean_pred = sum(preds) / len(preds)
@@ -172,8 +188,21 @@ class MLSoftmax:
 
         r = random.random()
         cum = 0.0
+        chosen_idx = len(self.nodes) - 1
         for i, p in enumerate(probs):
             cum += p
             if r <= cum:
-                return self.nodes[i], preds
-        return self.nodes[-1], preds
+                chosen_idx = i
+                break
+
+        # Registrar la petición como "en vuelo" instantáneamente
+        with self._pending_lock:
+            self._pending[self.nodes[chosen_idx]["id"]] += 1
+
+        return self.nodes[chosen_idx], preds
+
+    def on_complete(self, node_id):
+        """Callback invocado por el cliente cuando la petición HTTP termina."""
+        with self._pending_lock:
+            self._pending[node_id] = max(0, self._pending[node_id] - 1)
+

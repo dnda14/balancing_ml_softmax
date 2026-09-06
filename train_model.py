@@ -26,6 +26,8 @@ import numpy as np
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from catboost import CatBoostRegressor
+import xgboost as xgb
+import lightgbm as lgb
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common.config import LOCAL_NODES, NODE_SPEED
@@ -136,43 +138,65 @@ def collect_training_data(n_samples=600, arrival_rate=11.0, seed=42, mode="local
     return X, y
 
 
-def train_and_save(X, y, out_path="data/model.cbm"):
-    model = CatBoostRegressor(
-        iterations=400,
-        depth=6,
-        learning_rate=0.08,
-        loss_function="RMSE",
-        verbose=False,
-        random_seed=42,
-    )
+def train_and_save(X, y):
     n = len(X)
     split = int(n * 0.85)
     idx = list(range(n))
     random.Random(1).shuffle(idx)
     train_idx, val_idx = idx[:split], idx[split:]
 
-    X_train = [X[i] for i in train_idx]
-    y_train = [y[i] for i in train_idx]
-    X_val = [X[i] for i in val_idx]
-    y_val = [y[i] for i in val_idx]
+    X_train = np.array([X[i] for i in train_idx])
+    y_train = np.array([y[i] for i in train_idx])
+    X_val = np.array([X[i] for i in val_idx])
+    y_val = np.array([y[i] for i in val_idx])
 
-    model.fit(X_train, y_train, eval_set=(X_val, y_val), use_best_model=True)
+    models = {
+        "catboost": CatBoostRegressor(
+            iterations=400, depth=6, learning_rate=0.08,
+            loss_function="RMSE", verbose=False, random_seed=42
+        ),
+        "xgboost": xgb.XGBRegressor(
+            n_estimators=400, max_depth=6, learning_rate=0.08,
+            random_state=42, n_jobs=-1
+        ),
+        "lightgbm": lgb.LGBMRegressor(
+            n_estimators=400, max_depth=6, learning_rate=0.08,
+            random_state=42, n_jobs=-1, verbose=-1
+        )
+    }
 
-    preds = model.predict(X_val)
-    ss_res = sum((yv - p) ** 2 for yv, p in zip(y_val, preds))
-    y_mean = sum(y_val) / len(y_val)
-    ss_tot = sum((yv - y_mean) ** 2 for yv in y_val)
-    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
-    rmse = (ss_res / len(y_val)) ** 0.5
+    metrics = {}
+    os.makedirs("data", exist_ok=True)
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    model.save_model(out_path)
+    trained_models = {}
+    for name, model in models.items():
+        print(f"    -> Entrenando {name}...")
+        if name == "catboost":
+            model.fit(X_train, y_train, eval_set=(X_val, y_val), use_best_model=True)
+            model.save_model("data/model_catboost.cbm")
+        elif name == "xgboost":
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+            model.save_model("data/model_xgboost.json")
+        elif name == "lightgbm":
+            # LGBM eval_set formatting
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)])
+            model.booster_.save_model("data/model_lightgbm.txt")
+        
+        preds = model.predict(X_val)
+        ss_res = sum((yv - p) ** 2 for yv, p in zip(y_val, preds))
+        y_mean = sum(y_val) / len(y_val)
+        ss_tot = sum((yv - y_mean) ** 2 for yv in y_val)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+        rmse = (ss_res / len(y_val)) ** 0.5
+        
+        metrics[name] = {"r2_val": r2, "rmse_val_ms": rmse}
+        trained_models[name] = model
 
-    metrics = {"r2_val": r2, "rmse_val_ms": rmse, "n_train": len(X_train), "n_val": len(X_val)}
+    metrics["info"] = {"n_train": len(X_train), "n_val": len(X_val)}
     with open("data/train_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    return model, metrics
+    return trained_models, metrics
 
 
 if __name__ == "__main__":
@@ -195,6 +219,7 @@ if __name__ == "__main__":
     with open("data/training_data.json", "w") as f:
         json.dump({"X": X, "y": y}, f)
 
-    print("Entrenando modelo CatBoost...")
-    model, metrics = train_and_save(X, y)
-    print("Métricas de validación:", metrics)
+    print("Entrenando modelos de regresión...")
+    models, metrics = train_and_save(X, y)
+    print("Métricas de validación:")
+    print(json.dumps(metrics, indent=2))

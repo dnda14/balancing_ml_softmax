@@ -4,7 +4,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 
 
-def _send(node, task_size, out, idx):
+def _send(node, task_size, out, idx, on_complete=None):
     t0 = time.time()
     try:
         r = requests.post(node["url"] + "/process", json={"task_size": task_size}, timeout=15)
@@ -26,6 +26,8 @@ def _send(node, task_size, out, idx):
         "error": err,
         "t_start": t0,
     }
+    if on_complete:
+        on_complete(node["id"])
 
 
 def run_load(strategy, task_sizes, arrival_rate_per_s=15.0, max_workers=60, seed=None):
@@ -39,6 +41,8 @@ def run_load(strategy, task_sizes, arrival_rate_per_s=15.0, max_workers=60, seed
     results = [None] * n
     t_start = time.time()
 
+    on_complete = getattr(strategy, 'on_complete', None)
+
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = []
         for i, task_size in enumerate(task_sizes):
@@ -47,7 +51,7 @@ def run_load(strategy, task_sizes, arrival_rate_per_s=15.0, max_workers=60, seed
             if target > now:
                 time.sleep(target - now)
             node, _preds = strategy.select(task_size)
-            futures.append(ex.submit(_send, node, task_size, results, i))
+            futures.append(ex.submit(_send, node, task_size, results, i, on_complete))
         for f in futures:
             f.result()
 

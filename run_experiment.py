@@ -14,6 +14,8 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(__file__))
 from catboost import CatBoostRegressor
+import xgboost as xgb
+import lightgbm as lgb
 
 from common.config import LOCAL_NODES, NODE_SPEED, WRR_WEIGHTS
 from common.local_workers import start_local_workers, stop_local_workers
@@ -84,8 +86,19 @@ def _diag(name, res):
 
 
 def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode="local", rep=0):
-    model = CatBoostRegressor()
-    model.load_model("data/model.cbm")
+    model_cat = CatBoostRegressor()
+    model_cat.load_model("data/model_catboost.cbm")
+    
+    model_xgb = xgb.XGBRegressor()
+    model_xgb.load_model("data/model_xgboost.json")
+    
+    model_lgb = lgb.Booster(model_file="data/model_lightgbm.txt")
+    
+    ml_models = [
+        ("catboost", model_cat),
+        ("xgboost", model_xgb),
+        ("lightgbm", model_lgb)
+    ]
 
     task_sizes = generate_task_sizes(n_requests, seed=seed)
     start_fn, stop_fn = get_runtime(mode, stats_latency_ms)
@@ -172,7 +185,7 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
     poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
     poller.start()
     try:
-        strat = MLArgmin(LOCAL_NODES, model, poller, NODE_SPEED)
+        strat = MLArgmin(LOCAL_NODES, model_cat, poller, NODE_SPEED, model_name="catboost")
         res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
         _diag(strat.name if hasattr(strat, "name") else "?", res)
         all_summaries.append(summarize("ml_argmin_baseline", res, {
@@ -184,22 +197,23 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
         stop_fn(handle)
 
     # --- 6. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-    poller.start()
-    try:
-        strat = MLSoftmax(LOCAL_NODES, model, poller, NODE_SPEED, temperature_fraction=0.20)
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("ml_softmax_propuesto", res, {
-            "avg_poll_cycle_ms": poller.avg_cycle_ms(),
-        }))
-        _collect_raw("ml_softmax_propuesto", res)
-    finally:
-        poller.stop()
-        stop_fn(handle)
+    for model_name, model_obj in ml_models:
+        if mode == "docker":
+            restart_node_containers(LOCAL_NODES)
+        handle = start_fn(LOCAL_NODES)
+        poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+        poller.start()
+        try:
+            strat = MLSoftmax(LOCAL_NODES, model_obj, poller, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
+            res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+            _diag(strat.name if hasattr(strat, "name") else "?", res)
+            all_summaries.append(summarize(strat.name, res, {
+                "avg_poll_cycle_ms": poller.avg_cycle_ms(),
+            }))
+            _collect_raw(strat.name, res)
+        finally:
+            poller.stop()
+            stop_fn(handle)
 
     return all_summaries, raw_records
 
