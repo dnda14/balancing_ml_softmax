@@ -14,20 +14,31 @@ import math
 import random
 
 
-def build_features(stats: dict, task_size: float, node_speed: float) -> list:
+def build_features(stats: dict, task_size: float, node_speed: float, staleness_ms: float) -> list:
     """Vector de características usado por el modelo predictivo.
 
     Incluye features de tendencia (delta) que capturan la *dirección* del
     cambio en el nodo entre ciclos consecutivos del StatsPoller:
       - delta_active_requests > 0  →  la cola está creciendo (empeorando)
       - delta_avg_latency_ms > 0   →  la latencia está subiendo (empeorando)
+    
+    Nuevos features ingenierizados:
+      - estimated_service_time: ratio puro de trabajo/velocidad (ahorra al árbol hacer la división)
+      - staleness_ms: penaliza o contextualiza datos antiguos
+      - node_utilization: normaliza la carga activa en función de la capacidad de hilos
     """
+    estimated_service_time = task_size / node_speed if node_speed > 0 else 0
+    node_utilization = stats.get("active_requests", 0) / 8.0
+
     return [
         task_size,
         stats.get("active_requests", 0),
         stats.get("avg_recent_latency_ms", 0.0),
         stats.get("delta_active_requests", 0),
         stats.get("delta_avg_latency_ms", 0.0),
+        estimated_service_time,
+        staleness_ms,
+        node_utilization,
     ]
 
 
@@ -77,7 +88,9 @@ class MLArgmin:
         preds = []
         for n in self.nodes:
             stats = self.poller.get_stats(n["id"])
-            feats = build_features(stats, task_size, self.node_speed[n["id"]])
+            staleness = self.poller.get_staleness_ms(n["id"])
+            staleness = staleness if staleness is not None else 0.0
+            feats = build_features(stats, task_size, self.node_speed[n["id"]], staleness)
             pred = self.model.predict([feats])[0]
             preds.append(pred)
         best_idx = min(range(len(preds)), key=lambda i: preds[i])
@@ -106,7 +119,9 @@ class MLSoftmax:
         preds = []
         for n in self.nodes:
             stats = self.poller.get_stats(n["id"])
-            feats = build_features(stats, task_size, self.node_speed[n["id"]])
+            staleness = self.poller.get_staleness_ms(n["id"])
+            staleness = staleness if staleness is not None else 0.0
+            feats = build_features(stats, task_size, self.node_speed[n["id"]], staleness)
             pred = self.model.predict([feats])[0]
             preds.append(pred)
 

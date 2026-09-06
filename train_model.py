@@ -44,7 +44,9 @@ def get_runtime(mode, stats_latency_ms):
 
 def collect_one(node, task_size, poller, rows, idx):
     stats = poller.get_stats(node["id"])
-    feats = build_features(stats, task_size, NODE_SPEED[node["id"]])
+    staleness = poller.get_staleness_ms(node["id"])
+    staleness = staleness if staleness is not None else 0.0
+    feats = build_features(stats, task_size, NODE_SPEED[node["id"]], staleness)
     try:
         r = requests.post(node["url"] + "/process", json={"task_size": task_size}, timeout=15)
         latency = r.json()["latency_ms"]
