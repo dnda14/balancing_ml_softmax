@@ -13,6 +13,7 @@ services:
       - NODE_ID=node-a
       - NODE_SPEED=1.0
       - STATS_LATENCY_MS=25
+      - CYCLES_PER_UNIT=10
     ports:
       - "5001:5000"
     cpus: 1.0
@@ -29,6 +30,7 @@ services:
       - NODE_ID=node-b
       - NODE_SPEED=0.7
       - STATS_LATENCY_MS=25
+      - CYCLES_PER_UNIT=10
     ports:
       - "5002:5000"
     cpus: 0.7
@@ -45,6 +47,7 @@ services:
       - NODE_ID=node-c
       - NODE_SPEED=0.45
       - STATS_LATENCY_MS=25
+      - CYCLES_PER_UNIT=10
     ports:
       - "5003:5000"
     cpus: 0.45

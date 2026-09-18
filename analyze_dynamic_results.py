@@ -6,7 +6,15 @@ from collections import defaultdict
 from scipy import stats as sps
 import statistics
 
-def load_post_phase_data(path="results/dynamic_experiment.csv"):
+import glob
+def get_latest_file(pattern, default_path):
+    files = glob.glob(pattern)
+    return max(files, key=os.path.getmtime) if files else default_path
+
+def load_post_phase_data(path=None):
+    if path is None:
+        path = get_latest_file("results/dynamic_experiment_*.csv", "results/dynamic_experiment.csv")
+    print(f"Leyendo datos de: {path}")
     if not os.path.exists(path):
         print(f"Error: {path} no encontrado.")
         sys.exit(1)
@@ -104,10 +112,10 @@ def run_statistical_test(by_strategy_rep_mean, file_out):
         file_out.write(text + "\n")
         
     print_and_write("\n" + "=" * 80)
-    print_and_write("3. PRUEBA DE SIGNIFICANCIA (H3): WRR vs ML-Softmax (Post-Falla)")
+    print_and_write("3. PRUEBA DE SIGNIFICANCIA (H3): WRR vs ML-Softmax (Catboost, Post-Falla)")
     print_and_write("=" * 80)
     
-    a_dict = by_strategy_rep_mean.get("ML-Softmax", {})
+    a_dict = by_strategy_rep_mean.get("ml_softmax_catboost", {})
     b_dict = by_strategy_rep_mean.get("Weighted Round Robin", {})
     common_reps = sorted(set(a_dict.keys()) & set(b_dict.keys()))
     
@@ -115,7 +123,7 @@ def run_statistical_test(by_strategy_rep_mean, file_out):
         print_and_write("No hay suficientes repeticiones para una prueba estadística (se necesitan al menos 2).")
         return
         
-    a = [a_dict[r] for r in common_reps] # Propuesto
+    a = [a_dict[r] for r in common_reps] # Propuesto (usaremos catboost como representante)
     b = [b_dict[r] for r in common_reps] # Baseline a comparar (WRR)
     
     # Supuestos:
@@ -154,7 +162,9 @@ def main():
         return
         
     os.makedirs("results", exist_ok=True)
-    report_path = "results/dynamic_statistical_report.txt"
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = f"results/dynamic_statistical_report_{timestamp}.txt"
     
     with open(report_path, "w", encoding="utf-8") as file_out:
         analyze_traffic_distribution(node_counts_by_rep, file_out)

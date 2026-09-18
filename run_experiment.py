@@ -85,7 +85,9 @@ def _diag(name, res):
         print(f"  [DIAG] {name}: 0 exitosas de {len(res)}. Errores de muestra: {errs}")
 
 
-def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode="local", rep=0):
+def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode="local", rep=0, run_strategies=None):
+    if run_strategies is None:
+        run_strategies = ["rr", "wrr", "lc", "p2c", "argmin", "softmax"]
     model_cat = CatBoostRegressor()
     model_cat.load_model("data/model_catboost.cbm")
     
@@ -121,111 +123,117 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
             })
 
     # --- 1. Round Robin ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    try:
-        strat = RoundRobin(LOCAL_NODES)
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("round_robin", res))
-        _collect_raw("round_robin", res)
-    finally:
-        stop_fn(handle)
+    if "rr" in run_strategies:
+        if mode == "docker":
+            restart_node_containers(LOCAL_NODES)
+        handle = start_fn(LOCAL_NODES)
+        try:
+            strat = RoundRobin(LOCAL_NODES)
+            res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+            _diag(strat.name if hasattr(strat, "name") else "?", res)
+            all_summaries.append(summarize("round_robin", res))
+            _collect_raw("round_robin", res)
+        finally:
+            stop_fn(handle)
 
     # --- 2. Weighted Round Robin ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    try:
-        strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("weighted_round_robin", res))
-        _collect_raw("weighted_round_robin", res)
-    finally:
-        stop_fn(handle)
+    if "wrr" in run_strategies:
+        if mode == "docker":
+            restart_node_containers(LOCAL_NODES)
+        handle = start_fn(LOCAL_NODES)
+        try:
+            strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
+            res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+            _diag(strat.name if hasattr(strat, "name") else "?", res)
+            all_summaries.append(summarize("weighted_round_robin", res))
+            _collect_raw("weighted_round_robin", res)
+        finally:
+            stop_fn(handle)
 
     # --- 3. Least Connection ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-    poller.start()
-    try:
-        strat = LeastConnection(LOCAL_NODES, poller)
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("least_connection", res))
-        _collect_raw("least_connection", res)
-    finally:
-        poller.stop()
-        stop_fn(handle)
-
-    # --- 4. Power of Two Choices ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-    poller.start()
-    try:
-        strat = PowerOfTwoChoices(LOCAL_NODES, poller)
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("power_of_two_choices", res))
-        _collect_raw("power_of_two_choices", res)
-    finally:
-        poller.stop()
-        stop_fn(handle)
-
-    # --- 5. ML-argmin (baseline, staleness por sondeo SECUENCIAL) ---
-    if mode == "docker":
-        restart_node_containers(LOCAL_NODES)
-    handle = start_fn(LOCAL_NODES)
-    poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
-    poller.start()
-    try:
-        strat = MLArgmin(LOCAL_NODES, model_cat, poller, NODE_SPEED, model_name="catboost")
-        res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
-        _diag(strat.name if hasattr(strat, "name") else "?", res)
-        all_summaries.append(summarize("ml_argmin_baseline", res, {
-            "avg_poll_cycle_ms": poller.avg_cycle_ms(),
-        }))
-        _collect_raw("ml_argmin_baseline", res)
-    finally:
-        poller.stop()
-        stop_fn(handle)
-
-    # --- 6. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
-    for model_name, model_obj in ml_models:
+    if "lc" in run_strategies:
         if mode == "docker":
             restart_node_containers(LOCAL_NODES)
         handle = start_fn(LOCAL_NODES)
         poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
         poller.start()
         try:
-            strat = MLSoftmax(LOCAL_NODES, model_obj, poller, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
+            strat = LeastConnection(LOCAL_NODES, poller)
             res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
             _diag(strat.name if hasattr(strat, "name") else "?", res)
-            all_summaries.append(summarize(strat.name, res, {
-                "avg_poll_cycle_ms": poller.avg_cycle_ms(),
-            }))
-            _collect_raw(strat.name, res)
+            all_summaries.append(summarize("least_connection", res))
+            _collect_raw("least_connection", res)
         finally:
             poller.stop()
             stop_fn(handle)
 
+    # --- 4. Power of Two Choices ---
+    if "p2c" in run_strategies:
+        if mode == "docker":
+            restart_node_containers(LOCAL_NODES)
+        handle = start_fn(LOCAL_NODES)
+        poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+        poller.start()
+        try:
+            strat = PowerOfTwoChoices(LOCAL_NODES, poller)
+            res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+            _diag(strat.name if hasattr(strat, "name") else "?", res)
+            all_summaries.append(summarize("power_of_two_choices", res))
+            _collect_raw("power_of_two_choices", res)
+        finally:
+            poller.stop()
+            stop_fn(handle)
+
+    # --- 5. ML-argmin (baseline, staleness por sondeo SECUENCIAL) ---
+    if "argmin" in run_strategies:
+        if mode == "docker":
+            restart_node_containers(LOCAL_NODES)
+        handle = start_fn(LOCAL_NODES)
+        poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
+        poller.start()
+        try:
+            strat = MLArgmin(LOCAL_NODES, model_cat, poller, NODE_SPEED, model_name="catboost")
+            res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+            _diag(strat.name if hasattr(strat, "name") else "?", res)
+            all_summaries.append(summarize("ml_argmin_baseline", res, {
+                "avg_poll_cycle_ms": poller.avg_cycle_ms(),
+            }))
+            _collect_raw("ml_argmin_baseline", res)
+        finally:
+            poller.stop()
+            stop_fn(handle)
+
+    # --- 6. ML-softmax (propuesta, sondeo CONCURRENTE + selección probabilística) ---
+    if "softmax" in run_strategies:
+        for model_name, model_obj in ml_models:
+            if mode == "docker":
+                restart_node_containers(LOCAL_NODES)
+            handle = start_fn(LOCAL_NODES)
+            poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+            poller.start()
+            try:
+                strat = MLSoftmax(LOCAL_NODES, model_obj, poller, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
+                res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+                _diag(strat.name if hasattr(strat, "name") else "?", res)
+                all_summaries.append(summarize(strat.name, res, {
+                    "avg_poll_cycle_ms": poller.avg_cycle_ms(),
+                }))
+                _collect_raw(strat.name, res)
+            finally:
+                poller.stop()
+                stop_fn(handle)
+
     return all_summaries, raw_records
 
 
-def run_repeated(n_reps=3, n_requests=150, arrival_rate=3.2, stats_latency_ms=35, base_seed=100, mode="local"):
+def run_repeated(n_reps=3, n_requests=150, arrival_rate=3.2, stats_latency_ms=35, base_seed=100, mode="local", run_strategies=None):
     all_runs = []
     all_raw = []
     for rep in range(n_reps):
         seed = base_seed + rep
         print(f"--- Repetición {rep+1}/{n_reps} (seed={seed}, modo={mode}) ---")
         summaries, raw = run_all(n_requests=n_requests, arrival_rate=arrival_rate, seed=seed,
-                                  stats_latency_ms=stats_latency_ms, mode=mode, rep=rep)
+                                  stats_latency_ms=stats_latency_ms, mode=mode, rep=rep, run_strategies=run_strategies)
         for s in summaries:
             s["rep"] = rep
             s["seed"] = seed
@@ -252,6 +260,8 @@ if __name__ == "__main__":
     parser.add_argument("--stats-latency-ms", type=float, default=35,
                          help="Latencia de red simulada para /stats (solo aplica en modo local; "
                               "en modo docker, configúrala en docker-compose.yml)")
+    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax"],
+                        help="Estrategias a ejecutar (ej. --strategies argmin softmax)")
     args = parser.parse_args()
 
     print(f"Modo de ejecución: {args.mode}")
@@ -259,18 +269,20 @@ if __name__ == "__main__":
         print("Asegúrate de haber corrido: docker compose up -d --build")
 
     runs, raw = run_repeated(n_reps=args.reps, n_requests=args.n, arrival_rate=args.rate,
-                              stats_latency_ms=args.stats_latency_ms, base_seed=100, mode=args.mode)
+                              stats_latency_ms=args.stats_latency_ms, base_seed=100, mode=args.mode, run_strategies=args.strategies)
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("results", exist_ok=True)
-    with open("results/comparison_repeated.json", "w") as f:
+    with open(f"results/comparison_repeated_{timestamp}.json", "w") as f:
         json.dump(runs, f, indent=2, default=str)
 
     import csv
-    with open("results/raw_requests.csv", "w", newline="") as f:
+    with open(f"results/raw_requests_{timestamp}.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["strategy", "rep", "seed", "node", "task_size", "latency_ms", "ok"])
         writer.writeheader()
         for r in raw:
             writer.writerow(r)
-    print(f"\nDatos crudos guardados: results/raw_requests.csv ({len(raw)} peticiones)")
+    print(f"\nDatos crudos guardados: results/raw_requests_{timestamp}.csv ({len(raw)} peticiones)")
 
     # agregación por estrategia (media +- desviación estándar entre repeticiones)
     by_strategy = {}
@@ -299,5 +311,5 @@ if __name__ == "__main__":
               f"{agg['latency_median_avg']:>16.1f}{agg['throughput_avg']:>13.2f}{agg['load_std_avg']:>16.2f}")
     print("=" * 110)
 
-    with open("results/aggregate_summary.json", "w") as f:
+    with open(f"results/aggregate_summary_{timestamp}.json", "w") as f:
         json.dump(agg_summary, f, indent=2, default=str)

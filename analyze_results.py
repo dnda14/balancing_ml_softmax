@@ -28,7 +28,12 @@ import os
 import json
 import csv
 import math
+import glob
 from collections import defaultdict
+
+def get_latest_file(pattern, default_path):
+    files = glob.glob(pattern)
+    return max(files, key=os.path.getmtime) if files else default_path
 
 from scipy import stats as sps
 
@@ -43,7 +48,10 @@ STRATEGY_LABELS = {
 }
 
 
-def load_raw(path="results/raw_requests.csv"):
+def load_raw(path=None):
+    if path is None:
+        path = get_latest_file("results/raw_requests_*.csv", "results/raw_requests.csv")
+    print(f"Leyendo datos crudos de: {path}")
     by_strategy = defaultdict(list)
     by_strategy_rep = defaultdict(lambda: defaultdict(list))
     with open(path, newline="") as f:
@@ -59,7 +67,10 @@ def load_raw(path="results/raw_requests.csv"):
     return by_strategy, by_strategy_rep
 
 
-def load_summaries(path="results/comparison_repeated.json"):
+def load_summaries(path=None):
+    if path is None:
+        path = get_latest_file("results/comparison_repeated_*.json", "results/comparison_repeated.json")
+    print(f"Leyendo resúmenes de: {path}")
     with open(path) as f:
         runs = json.load(f)
     by_strategy_rep_mean = defaultdict(dict)
@@ -194,7 +205,11 @@ def run_key_comparison(by_strategy_rep_mean):
     }
 
 
-def make_boxplot(by_strategy, out_path="results/latency_boxplot.png"):
+def make_boxplot(by_strategy, out_path=None):
+    if out_path is None:
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = f"results/latency_boxplot_{timestamp}.png"
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -227,11 +242,14 @@ def main():
     make_boxplot(by_strategy)
 
     report = {"anova": anova_result, "key_comparison_h3": key_result}
-    with open("results/statistical_report.json", "w") as f:
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = f"results/statistical_report_{timestamp}.json"
+    with open(report_path, "w") as f:
         json.dump(report, f, indent=2, default=str)
 
     print("\n" + "=" * 80)
-    print("Reporte completo guardado en: results/statistical_report.json")
+    print(f"Reporte completo guardado en: {report_path}")
     print("=" * 80)
 
 

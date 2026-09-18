@@ -65,6 +65,8 @@ def main():
     parser.add_argument("--reps", type=int, default=5, help="Número de repeticiones")
     parser.add_argument("--n", type=int, default=400, help="Peticiones por repetición")
     parser.add_argument("--rate", type=float, default=14.5, help="Tasa de llegada (peticiones/seg)")
+    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax"],
+                        help="Estrategias a ejecutar (ej. --strategies argmin softmax)")
     args = parser.parse_args()
 
     print(f"Iniciando escenario dinamico con {args.reps} repeticiones de {args.n} peticiones a {args.rate} req/s...")
@@ -97,77 +99,85 @@ def main():
         task_sizes = generate_task_sizes(args.n, seed=seed)
         
         # 1. Round Robin
-        print("\n--- Ejecutando Round Robin ---")
-        restart_node_containers(LOCAL_NODES)
-        rr_strat = RoundRobin(LOCAL_NODES)
-        res_rr = run_with_dynamic_change(rr_strat, task_sizes, args.rate, change_delay_s)
-        for r in res_rr:
-            all_raw_data.append({"strategy": "Round Robin", "rep": rep, **r})
+        if "rr" in args.strategies:
+            print("\n--- Ejecutando Round Robin ---")
+            restart_node_containers(LOCAL_NODES)
+            rr_strat = RoundRobin(LOCAL_NODES)
+            res_rr = run_with_dynamic_change(rr_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_rr:
+                all_raw_data.append({"strategy": "Round Robin", "rep": rep, **r})
             
         # 2. Weighted Round Robin
-        print("\n--- Ejecutando Weighted Round Robin ---")
-        restart_node_containers(LOCAL_NODES)
-        wrr_strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
-        res_wrr = run_with_dynamic_change(wrr_strat, task_sizes, args.rate, change_delay_s)
-        for r in res_wrr:
-            all_raw_data.append({"strategy": "Weighted Round Robin", "rep": rep, **r})
+        if "wrr" in args.strategies:
+            print("\n--- Ejecutando Weighted Round Robin ---")
+            restart_node_containers(LOCAL_NODES)
+            wrr_strat = WeightedRoundRobin(LOCAL_NODES, WRR_WEIGHTS)
+            res_wrr = run_with_dynamic_change(wrr_strat, task_sizes, args.rate, change_delay_s)
+            for r in res_wrr:
+                all_raw_data.append({"strategy": "Weighted Round Robin", "rep": rep, **r})
             
         # 3. Least Connection
-        print("\n--- Ejecutando Least Connection ---")
-        restart_node_containers(LOCAL_NODES)
-        poller_lc = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-        poller_lc.start()
-        try:
-            lc_strat = LeastConnection(LOCAL_NODES, poller_lc)
-            res_lc = run_with_dynamic_change(lc_strat, task_sizes, args.rate, change_delay_s)
-            for r in res_lc:
-                all_raw_data.append({"strategy": "Least Connection", "rep": rep, **r})
-        finally:
-            poller_lc.stop()
+        if "lc" in args.strategies:
+            print("\n--- Ejecutando Least Connection ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_lc = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+            poller_lc.start()
+            try:
+                lc_strat = LeastConnection(LOCAL_NODES, poller_lc)
+                res_lc = run_with_dynamic_change(lc_strat, task_sizes, args.rate, change_delay_s)
+                for r in res_lc:
+                    all_raw_data.append({"strategy": "Least Connection", "rep": rep, **r})
+            finally:
+                poller_lc.stop()
             
         # 4. Power of Two Choices
-        print("\n--- Ejecutando Power of Two Choices ---")
-        restart_node_containers(LOCAL_NODES)
-        poller_p2c = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
-        poller_p2c.start()
-        try:
-            p2c_strat = PowerOfTwoChoices(LOCAL_NODES, poller_p2c)
-            res_p2c = run_with_dynamic_change(p2c_strat, task_sizes, args.rate, change_delay_s)
-            for r in res_p2c:
-                all_raw_data.append({"strategy": "Power of Two Choices", "rep": rep, **r})
-        finally:
-            poller_p2c.stop()
+        if "p2c" in args.strategies:
+            print("\n--- Ejecutando Power of Two Choices ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_p2c = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=True)
+            poller_p2c.start()
+            try:
+                p2c_strat = PowerOfTwoChoices(LOCAL_NODES, poller_p2c)
+                res_p2c = run_with_dynamic_change(p2c_strat, task_sizes, args.rate, change_delay_s)
+                for r in res_p2c:
+                    all_raw_data.append({"strategy": "Power of Two Choices", "rep": rep, **r})
+            finally:
+                poller_p2c.stop()
             
         # 5. ML-argmin (baseline)
-        print("\n--- Ejecutando ML-Argmin ---")
-        restart_node_containers(LOCAL_NODES)
-        poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
-        poller_argmin.start()
-        try:
-            argmin_strat = MLArgmin(LOCAL_NODES, model_cat, poller_argmin, NODE_SPEED, model_name="catboost")
-            res_argmin = run_with_dynamic_change(argmin_strat, task_sizes, args.rate, change_delay_s)
-            for r in res_argmin:
-                all_raw_data.append({"strategy": "ML-Argmin", "rep": rep, **r})
-        finally:
-            poller_argmin.stop()
+        if "argmin" in args.strategies:
+            print("\n--- Ejecutando ML-Argmin ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_argmin = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
+            poller_argmin.start()
+            try:
+                argmin_strat = MLArgmin(LOCAL_NODES, model_cat, poller_argmin, NODE_SPEED, model_name="catboost")
+                res_argmin = run_with_dynamic_change(argmin_strat, task_sizes, args.rate, change_delay_s)
+                for r in res_argmin:
+                    all_raw_data.append({"strategy": "ML-Argmin", "rep": rep, **r})
+            finally:
+                poller_argmin.stop()
             
         # 6. ML-softmax (propuesto)
-        for model_name, model_obj in ml_models:
-            print(f"\n--- Ejecutando ML-Softmax ({model_name}) ---")
-            restart_node_containers(LOCAL_NODES)
-            poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
-            poller_softmax.start()
-            try:
-                softmax_strat = MLSoftmax(LOCAL_NODES, model_obj, poller_softmax, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
-                res_softmax = run_with_dynamic_change(softmax_strat, task_sizes, args.rate, change_delay_s)
-                for r in res_softmax:
-                    all_raw_data.append({"strategy": softmax_strat.name, "rep": rep, **r})
-            finally:
-                poller_softmax.stop()
+        if "softmax" in args.strategies:
+            for model_name, model_obj in ml_models:
+                print(f"\n--- Ejecutando ML-Softmax ({model_name}) ---")
+                restart_node_containers(LOCAL_NODES)
+                poller_softmax = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+                poller_softmax.start()
+                try:
+                    softmax_strat = MLSoftmax(LOCAL_NODES, model_obj, poller_softmax, NODE_SPEED, temperature_fraction=0.20, model_name=model_name)
+                    res_softmax = run_with_dynamic_change(softmax_strat, task_sizes, args.rate, change_delay_s)
+                    for r in res_softmax:
+                        all_raw_data.append({"strategy": softmax_strat.name, "rep": rep, **r})
+                finally:
+                    poller_softmax.stop()
 
     # Guardar CSV
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("results", exist_ok=True)
-    csv_path = "results/dynamic_experiment.csv"
+    csv_path = f"results/dynamic_experiment_{timestamp}.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["strategy", "rep", "phase", "rel_time", "node", "task_size", "latency_ms"])
         writer.writeheader()
@@ -195,7 +205,9 @@ def main():
         "Least Connection": "purple",
         "Power of Two Choices": "green",
         "ML-Argmin": "orange",
-        "ML-Softmax": "blue"
+        "ml_softmax_catboost": "blue",
+        "ml_softmax_xgboost": "dodgerblue",
+        "ml_softmax_lightgbm": "cyan"
     }
 
     def moving_average(x, w):
@@ -208,7 +220,7 @@ def main():
         w = 3 # Ventana de media móvil más pequeña porque ya agrupamos por segundo
         if len(sorted_buckets) > w:
             plt.plot(sorted_buckets[w-1:], moving_average(avg_latencies, w), 
-                     label=strat, color=colors[strat], linewidth=2)
+                     label=strat, color=colors.get(strat, "black"), linewidth=2)
         
     plt.axvline(x=change_delay_s, color='black', linestyle='--', label=f'Degradacion node-a (t={change_delay_s:.1f}s)')
     
@@ -219,8 +231,9 @@ def main():
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig("results/dynamic_experiment_plot.png")
-    print("[V] Grafico promediado guardado en results/dynamic_experiment_plot.png")
+    plot_path = f"results/dynamic_experiment_plot_{timestamp}.png"
+    plt.savefig(plot_path)
+    print(f"[V] Grafico promediado guardado en {plot_path}")
 
 if __name__ == "__main__":
     main()
