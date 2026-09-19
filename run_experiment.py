@@ -22,7 +22,7 @@ from common.local_workers import start_local_workers, stop_local_workers
 from common.docker_workers import ensure_docker_nodes, noop_teardown, reset_all_nodes, restart_node_containers
 from common.stats_poller import StatsPoller
 from loadgen.generator import generate_task_sizes
-from loadgen.client import run_load
+from loadgen.client import run_load, run_load_batched
 from balancers.strategies import RoundRobin, WeightedRoundRobin, MLArgmin, MLSoftmax, LeastConnection, PowerOfTwoChoices
 
 
@@ -223,6 +223,48 @@ def run_all(n_requests=150, arrival_rate=3.2, seed=7, stats_latency_ms=35, mode=
                 poller.stop()
                 stop_fn(handle)
 
+    # --- 7. ML-QUBO (prueba, equivalente a argmin pero con simulated annealing) ---
+    if "qubo" in run_strategies:
+        for model_name, model_obj in ml_models:
+            if mode == "docker":
+                restart_node_containers(LOCAL_NODES)
+            handle = start_fn(LOCAL_NODES)
+            poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
+            poller.start()
+            try:
+                from balancers.strategies import MLQubo
+                strat = MLQubo(LOCAL_NODES, model_obj, poller, NODE_SPEED, model_name=model_name)
+                res = run_load(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed)
+                _diag(strat.name, res)
+                all_summaries.append(summarize(strat.name, res, {
+                    "avg_poll_cycle_ms": poller.avg_cycle_ms(),
+                }))
+                _collect_raw(strat.name, res)
+            finally:
+                poller.stop()
+                stop_fn(handle)
+
+    # --- 8. ML-QUBO-BATCH (propuesta de batching, micro-lotes multivariable) ---
+    if "qubo_batch" in run_strategies:
+        for model_name, model_obj in ml_models:
+            if mode == "docker":
+                restart_node_containers(LOCAL_NODES)
+            handle = start_fn(LOCAL_NODES)
+            poller = StatsPoller(LOCAL_NODES, interval_ms=100, concurrent=False)
+            poller.start()
+            try:
+                from balancers.strategies import MLQuboBatch
+                strat = MLQuboBatch(LOCAL_NODES, model_obj, poller, NODE_SPEED, model_name=model_name)
+                res = run_load_batched(strat, task_sizes, arrival_rate_per_s=arrival_rate, seed=seed, batch_window_ms=50)
+                _diag(strat.name, res)
+                all_summaries.append(summarize(strat.name, res, {
+                    "avg_poll_cycle_ms": poller.avg_cycle_ms(),
+                }))
+                _collect_raw(strat.name, res)
+            finally:
+                poller.stop()
+                stop_fn(handle)
+
     return all_summaries, raw_records
 
 
@@ -260,7 +302,7 @@ if __name__ == "__main__":
     parser.add_argument("--stats-latency-ms", type=float, default=35,
                          help="Latencia de red simulada para /stats (solo aplica en modo local; "
                               "en modo docker, configúrala en docker-compose.yml)")
-    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax"],
+    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax", "qubo", "qubo_batch"],
                         help="Estrategias a ejecutar (ej. --strategies argmin softmax)")
     args = parser.parse_args()
 

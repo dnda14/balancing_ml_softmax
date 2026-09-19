@@ -47,6 +47,12 @@ STRATEGY_LABELS = {
     "ml_softmax_propuesto": "ML-softmax (propuesto)",
 }
 
+def get_label(strat):
+    if strat in STRATEGY_LABELS:
+        return STRATEGY_LABELS[strat]
+    # Si es una estrategia dinámica como ml_qubo_batch_catboost
+    return strat.replace("_", " ").title()
+
 
 def load_raw(path=None):
     if path is None:
@@ -94,6 +100,13 @@ def check_assumptions(by_strategy):
     print("\n" + "=" * 80)
     print("1. VERIFICACIÓN DE SUPUESTOS (sobre latencias a nivel de petición)")
     print("=" * 80)
+    
+    for strat in by_strategy.keys():
+        if strat not in STRATEGY_ORDER:
+            STRATEGY_ORDER.append(strat)
+        if strat not in STRATEGY_LABELS:
+            STRATEGY_LABELS[strat] = get_label(strat)
+
     report = {}
     for strat in STRATEGY_ORDER:
         if strat not in by_strategy or len(by_strategy[strat]) < 3:
