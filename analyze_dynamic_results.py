@@ -74,9 +74,27 @@ def analyze_traffic_distribution(node_counts_by_rep, file_out):
                 total_avg += count / n_reps
                 
         print_and_write(f"\n{strat} (Total peticiones promedio: {total_avg:.1f})")
+        
+        counts = []
         for node in sorted(avg_counts.keys()):
             pct = (avg_counts[node] / total_avg) * 100 if total_avg > 0 else 0
+            counts.append(avg_counts[node])
             print_and_write(f"  {node}: {avg_counts[node]:.1f} peticiones ({pct:.1f}%)")
+
+        if len(counts) > 0 and total_avg > 0:
+            max_load = max(counts)
+            min_load = min(counts)
+            avg_load = total_avg / len(counts)
+            
+            # Grado de Disparidad (Degree of Imbalance) = (Max - Min) / Promedio
+            di = (max_load - min_load) / avg_load if avg_load > 0 else 0
+            
+            # Índice de Equidad de Jain (Jain's Fairness Index)
+            sum_sq = sum(c**2 for c in counts)
+            jain_index = (sum(counts)**2) / (len(counts) * sum_sq) if sum_sq > 0 else 0
+            
+            print_and_write(f"  => Grado de Disparidad (DI): {di:.3f} (más cercano a 0 = mejor/más parejo)")
+            print_and_write(f"  => Índice de Equidad de Jain: {jain_index:.3f} (más cercano a 1 = mejor/más parejo)")
 
 
 def analyze_latencies(by_strategy_rep_latencies, file_out):

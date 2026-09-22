@@ -3,6 +3,7 @@ import subprocess
 import time
 import signal
 import requests
+import sys
 
 WORKER_APP = os.path.join(os.path.dirname(__file__), "..", "worker", "app.py")
 
@@ -18,7 +19,7 @@ def start_local_workers(nodes, stats_latency_ms=0):
         env["PORT"] = port
         env["STATS_LATENCY_MS"] = str(stats_latency_ms)
         p = subprocess.Popen(
-            ["python3", WORKER_APP],
+            [sys.executable, WORKER_APP],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

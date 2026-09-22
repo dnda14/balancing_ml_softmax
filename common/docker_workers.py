@@ -24,13 +24,13 @@ def _container_name(node_id: str) -> str:
     return f"{COMPOSE_PROJECT}-{node_id}-1"
 
 
-def ensure_docker_nodes(nodes, timeout_s=30):
+def ensure_docker_nodes(nodes, timeout_s=120):
     for n in nodes:
         ok = False
         t0 = time.time()
         while time.time() - t0 < timeout_s:
             try:
-                r = requests.get(n["url"] + "/health", timeout=1.0)
+                r = requests.get(n["url"] + "/health", timeout=5.0)
                 if r.status_code == 200:
                     ok = True
                     break
@@ -46,7 +46,7 @@ def ensure_docker_nodes(nodes, timeout_s=30):
     return None  # no hay 'procs' que gestionar; el ciclo de vida lo maneja Docker
 
 
-def restart_node_containers(nodes, timeout_s=30):
+def restart_node_containers(nodes, timeout_s=120):
     """Reinicia los contenedores Docker de cada nodo y espera a que estén sanos.
 
     A diferencia de reset_all_nodes() (que solo limpia contadores Python vía
@@ -65,7 +65,7 @@ def restart_node_containers(nodes, timeout_s=30):
         try:
             subprocess.run(
                 ["docker", "restart", cname],
-                check=True, capture_output=True, timeout=30,
+                check=True, capture_output=True, timeout=120,
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(

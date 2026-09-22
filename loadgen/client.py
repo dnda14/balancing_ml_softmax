@@ -4,7 +4,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 
 
-def _send(node, task_size, out, idx, on_complete=None, target_time=None):
+def _send(node, task_size, out, idx, on_complete=None, target_time=None, overhead_ms=0.0):
     t0 = time.time()
     try:
         r = requests.post(node["url"] + "/process", json={"task_size": task_size}, timeout=15)
@@ -27,6 +27,7 @@ def _send(node, task_size, out, idx, on_complete=None, target_time=None):
         "node": node["id"],
         "latency_ms": total_ms,
         "server_latency_ms": server_latency,
+        "overhead_ms": overhead_ms,
         "ok": ok,
         "error": err,
         "t_start": start_measurement,
@@ -55,8 +56,10 @@ def run_load(strategy, task_sizes, arrival_rate_per_s=15.0, max_workers=60, seed
             now = time.time()
             if target_time > now:
                 time.sleep(target_time - now)
+            t_algo_start = time.time()
             node, _preds = strategy.select(task_size)
-            futures.append(ex.submit(_send, node, task_size, results, i, on_complete, target_time))
+            overhead_ms = (time.time() - t_algo_start) * 1000.0
+            futures.append(ex.submit(_send, node, task_size, results, i, on_complete, target_time, overhead_ms))
         for f in futures:
             f.result()
 
@@ -102,13 +105,14 @@ def run_load_batched(strategy, task_sizes, arrival_rate_per_s=15.0, max_workers=
 
             batch_task_sizes = [task_sizes[j] for j in batch_indices]
             
-            # La estrategia evalúa el lote completo y asigna un nodo a cada tarea
+            t_algo_start = time.time()
             batch_decisions = strategy.select_batch(batch_task_sizes)
+            overhead_ms_per_task = ((time.time() - t_algo_start) * 1000.0) / len(batch_task_sizes)
             
             for j_idx, idx in enumerate(batch_indices):
                 node, _preds = batch_decisions[j_idx]
                 req_target_time = t_start + arrival_times[idx]
-                futures.append(ex.submit(_send, node, batch_task_sizes[j_idx], results, idx, on_complete, req_target_time))
+                futures.append(ex.submit(_send, node, batch_task_sizes[j_idx], results, idx, on_complete, req_target_time, overhead_ms_per_task))
                 
         for f in futures:
             f.result()

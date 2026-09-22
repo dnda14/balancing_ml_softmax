@@ -58,6 +58,41 @@ services:
       retries: 5
       start_period: 5s
 
+  node-d:
+    build: ./worker
+    environment:
+      - NODE_ID=node-d
+      - NODE_SPEED=0.5
+      - STATS_LATENCY_MS=25
+      - CYCLES_PER_UNIT=10
+    ports:
+      - "6004:5000"
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  node-e:
+    build: ./worker
+    environment:
+      - NODE_ID=node-e
+      - NODE_SPEED=0.4
+      - STATS_LATENCY_MS=25
+      - CYCLES_PER_UNIT=10
+    ports:
+      - "6005:5000"
+    cpus: 0.4
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
 networks:
   default:
     name: lb_thesis_net
+

@@ -60,6 +60,8 @@ def summarize(name, results, extra=None):
     duration_s = (max(r["t_start"] for r in ok) - min(r["t_start"] for r in ok)) + (lat[-1] / 1000.0 if lat else 0)
     throughput = len(ok) / duration_s if duration_s > 0 else 0.0
 
+    overheads = [r.get("overhead_ms", 0.0) for r in ok]
+
     summary = {
         "strategy": name,
         "n_requests": len(results),
@@ -69,6 +71,7 @@ def summarize(name, results, extra=None):
         "latency_median_ms": statistics.median(lat) if lat else None,
         "latency_p90_ms": sorted(lat)[int(len(lat) * 0.9)] if lat else None,
         "latency_stdev_ms": statistics.pstdev(lat) if len(lat) > 1 else None,
+        "overhead_mean_ms": statistics.mean(overheads) if overheads else 0.0,
         "throughput_req_s": throughput,
         "per_node_counts": per_node_counts,
         "load_distribution_std": std_load,
@@ -331,13 +334,14 @@ if __name__ == "__main__":
     for r in runs:
         by_strategy.setdefault(r["strategy"], []).append(r)
 
-    print("\n" + "=" * 110)
-    print(f"{'Estrategia':<24}{'Lat.media(ms)':>18}{'Lat.mediana':>16}{'Throughput':>13}{'StdDev carga':>16}")
-    print("=" * 110)
+    print("\n" + "=" * 130)
+    print(f"{'Estrategia':<24}{'Lat.media(ms)':>18}{'Lat.mediana':>16}{'CPU_Overhead':>16}{'Throughput':>13}{'StdDev carga':>16}")
+    print("=" * 130)
     agg_summary = []
     for name, items in by_strategy.items():
         means = [i["latency_mean_ms"] for i in items]
         medians = [i["latency_median_ms"] for i in items]
+        overheads = [i.get("overhead_mean_ms", 0.0) for i in items]
         thr = [i["throughput_req_s"] for i in items]
         loadstd = [i["load_distribution_std"] for i in items]
         agg = {
@@ -345,13 +349,14 @@ if __name__ == "__main__":
             "latency_mean_avg": statistics.mean(means),
             "latency_mean_std": statistics.pstdev(means) if len(means) > 1 else 0.0,
             "latency_median_avg": statistics.mean(medians),
+            "overhead_mean_avg": statistics.mean(overheads),
             "throughput_avg": statistics.mean(thr),
             "load_std_avg": statistics.mean(loadstd),
         }
         agg_summary.append(agg)
         print(f"{name:<24}{agg['latency_mean_avg']:>10.1f} +-{agg['latency_mean_std']:>5.1f}"
-              f"{agg['latency_median_avg']:>16.1f}{agg['throughput_avg']:>13.2f}{agg['load_std_avg']:>16.2f}")
-    print("=" * 110)
+              f"{agg['latency_median_avg']:>16.1f}{agg['overhead_mean_avg']:>16.1f}ms{agg['throughput_avg']:>13.2f}{agg['load_std_avg']:>16.2f}")
+    print("=" * 130)
 
     with open(f"results/aggregate_summary_{timestamp}.json", "w") as f:
         json.dump(agg_summary, f, indent=2, default=str)
