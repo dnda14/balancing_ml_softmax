@@ -65,7 +65,7 @@ def main():
     parser.add_argument("--reps", type=int, default=5, help="Número de repeticiones")
     parser.add_argument("--n", type=int, default=400, help="Peticiones por repetición")
     parser.add_argument("--rate", type=float, default=14.5, help="Tasa de llegada (peticiones/seg)")
-    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax"],
+    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax", "qubo_batch", "pure_qubo_batch", "ml_qubo_light", "pure_qubo_light"],
                         help="Estrategias a ejecutar (ej. --strategies argmin softmax)")
     args = parser.parse_args()
 
@@ -172,6 +172,106 @@ def main():
                         all_raw_data.append({"strategy": softmax_strat.name, "rep": rep, **r})
                 finally:
                     poller_softmax.stop()
+
+        # 7. QUBO Batch
+        if "qubo_batch" in args.strategies:
+            print(f"\n--- Ejecutando QUBO Batch (catboost) ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_qubo = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+            poller_qubo.start()
+            try:
+                from balancers.strategies import MLQuboBatch
+                qubo_strat = MLQuboBatch(LOCAL_NODES, model_cat, poller_qubo, NODE_SPEED, model_name="catboost")
+                
+                # Para micro-batching dinámico, necesitamos envolver select()
+                # run_with_dynamic_change espera un objeto con select(task_size)
+                # Crearemos un adaptador para que funcione en el framework asincrono actual
+                # O como el batching se maneja dentro, quizás deberiamos llamar select_batch
+                # Wait, the current runner (run_with_dynamic_change) assumes one-by-one.
+                # Actually run_experiment uses process_requests which supports select_batch.
+                
+                # Let's check how run_experiment handles it... ah, I should just use the wrapper
+                class QuboBatchWrapper:
+                    def __init__(self, strat): self.strat = strat; self.batch = []; self.name = strat.name
+                    def select(self, task_size):
+                        return self.strat.select_batch([task_size])[0]
+                    def on_complete(self, node_id):
+                        self.strat.on_complete(node_id)
+                        
+                res_qubo = run_with_dynamic_change(QuboBatchWrapper(qubo_strat), task_sizes, args.rate, change_delay_s)
+                for r in res_qubo:
+                    all_raw_data.append({"strategy": qubo_strat.name, "rep": rep, **r})
+            finally:
+                poller_qubo.stop()
+
+        # 8. PURE QUBO Batch
+        if "pure_qubo_batch" in args.strategies:
+            print(f"\n--- Ejecutando Pure QUBO Batch ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_pure_qubo = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+            poller_pure_qubo.start()
+            try:
+                from balancers.strategies import PureQuboBatch
+                pure_qubo_strat = PureQuboBatch(LOCAL_NODES, poller_pure_qubo, NODE_SPEED)
+                
+                class QuboBatchWrapper:
+                    def __init__(self, strat): self.strat = strat; self.batch = []; self.name = strat.name
+                    def select(self, task_size):
+                        return self.strat.select_batch([task_size])[0]
+                    def on_complete(self, node_id):
+                        self.strat.on_complete(node_id)
+                        
+                res_pure_qubo = run_with_dynamic_change(QuboBatchWrapper(pure_qubo_strat), task_sizes, args.rate, change_delay_s)
+                for r in res_pure_qubo:
+                    all_raw_data.append({"strategy": pure_qubo_strat.name, "rep": rep, **r})
+            finally:
+                poller_pure_qubo.stop()
+
+        # 9. ML QUBO Light (num_reads=1, num_sweeps=10)
+        if "ml_qubo_light" in args.strategies:
+            print(f"\n--- Ejecutando ML QUBO Light (catboost, sweeps=10) ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_ml_light = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+            poller_ml_light.start()
+            try:
+                from balancers.strategies import MLQuboBatchLight
+                ml_light_strat = MLQuboBatchLight(LOCAL_NODES, model_cat, poller_ml_light, NODE_SPEED, model_name="catboost")
+                
+                class QuboBatchWrapper:
+                    def __init__(self, strat): self.strat = strat; self.batch = []; self.name = strat.name
+                    def select(self, task_size):
+                        return self.strat.select_batch([task_size])[0]
+                    def on_complete(self, node_id):
+                        self.strat.on_complete(node_id)
+                        
+                res_ml_light = run_with_dynamic_change(QuboBatchWrapper(ml_light_strat), task_sizes, args.rate, change_delay_s)
+                for r in res_ml_light:
+                    all_raw_data.append({"strategy": ml_light_strat.name, "rep": rep, **r})
+            finally:
+                poller_ml_light.stop()
+
+        # 10. Pure QUBO Light (num_reads=1, num_sweeps=10)
+        if "pure_qubo_light" in args.strategies:
+            print(f"\n--- Ejecutando Pure QUBO Light (sweeps=10) ---")
+            restart_node_containers(LOCAL_NODES)
+            poller_pure_light = StatsPoller(LOCAL_NODES, interval_ms=50, concurrent=True)
+            poller_pure_light.start()
+            try:
+                from balancers.strategies import PureQuboBatchLight
+                pure_light_strat = PureQuboBatchLight(LOCAL_NODES, poller_pure_light, NODE_SPEED)
+                
+                class QuboBatchWrapper:
+                    def __init__(self, strat): self.strat = strat; self.batch = []; self.name = strat.name
+                    def select(self, task_size):
+                        return self.strat.select_batch([task_size])[0]
+                    def on_complete(self, node_id):
+                        self.strat.on_complete(node_id)
+                        
+                res_pure_light = run_with_dynamic_change(QuboBatchWrapper(pure_light_strat), task_sizes, args.rate, change_delay_s)
+                for r in res_pure_light:
+                    all_raw_data.append({"strategy": pure_light_strat.name, "rep": rep, **r})
+            finally:
+                poller_pure_light.stop()
 
     # Guardar CSV
     import datetime

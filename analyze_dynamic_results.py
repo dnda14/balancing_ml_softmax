@@ -22,6 +22,8 @@ def load_post_phase_data(path=None):
     by_strategy = defaultdict(list)
     by_strategy_rep_latencies = defaultdict(lambda: defaultdict(list))
     node_counts_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    # NUEVO: acumular task_size por nodo por repetición
+    node_workload_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
     
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -33,12 +35,14 @@ def load_post_phase_data(path=None):
             rep = int(row["rep"])
             lat = float(row["latency_ms"])
             node = row["node"]
+            task_size = float(row.get("task_size", 0))
             
             by_strategy[strat].append(lat)
             by_strategy_rep_latencies[strat][rep].append(lat)
             node_counts_by_rep[strat][rep][node] += 1
+            node_workload_by_rep[strat][rep][node] += task_size
             
-    return by_strategy, by_strategy_rep_latencies, node_counts_by_rep
+    return by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep
 
 
 def cohens_d(a, b):
@@ -50,7 +54,17 @@ def cohens_d(a, b):
     return (sum(a) / na - sum(b) / nb) / pooled_std
 
 
-def analyze_traffic_distribution(node_counts_by_rep, file_out):
+# Velocidades de los nodos (capacidad relativa)
+NODE_CAPACITY = {
+    "node-a": 1.0,
+    "node-b": 0.7,
+    "node-c": 0.45,
+    "node-d": 0.5,
+    "node-e": 0.4,
+}
+
+
+def analyze_traffic_distribution(node_counts_by_rep, node_workload_by_rep, file_out):
     def print_and_write(text):
         print(text)
         file_out.write(text + "\n")
@@ -89,12 +103,40 @@ def analyze_traffic_distribution(node_counts_by_rep, file_out):
             # Grado de Disparidad (Degree of Imbalance) = (Max - Min) / Promedio
             di = (max_load - min_load) / avg_load if avg_load > 0 else 0
             
-            # Índice de Equidad de Jain (Jain's Fairness Index)
+            # Índice de Equidad de Jain (Jain's Fairness Index) — por conteo de tareas
             sum_sq = sum(c**2 for c in counts)
             jain_index = (sum(counts)**2) / (len(counts) * sum_sq) if sum_sq > 0 else 0
             
-            print_and_write(f"  => Grado de Disparidad (DI): {di:.3f} (más cercano a 0 = mejor/más parejo)")
-            print_and_write(f"  => Índice de Equidad de Jain: {jain_index:.3f} (más cercano a 1 = mejor/más parejo)")
+            print_and_write(f"  => Jain (por conteo de tareas): {jain_index:.3f}")
+            print_and_write(f"  => Disparidad (DI): {di:.3f}")
+
+        # --- NUEVO: Fairness ponderado por carga real / capacidad ---
+        workload_reps = node_workload_by_rep.get(strat, {})
+        if workload_reps:
+            # Calcular carga normalizada promedio por nodo: Σ(task_size) / speed
+            avg_norm_load = defaultdict(float)
+            for rep, nodes in workload_reps.items():
+                for node, total_work in nodes.items():
+                    capacity = NODE_CAPACITY.get(node, 0.5)
+                    avg_norm_load[node] += (total_work / capacity) / n_reps
+            
+            norm_loads = [avg_norm_load[n] for n in sorted(avg_norm_load.keys())]
+            if norm_loads and sum(norm_loads) > 0:
+                sum_nl = sum(norm_loads)
+                sum_sq_nl = sum(x**2 for x in norm_loads)
+                jain_weighted = (sum_nl**2) / (len(norm_loads) * sum_sq_nl) if sum_sq_nl > 0 else 0
+                
+                avg_nl = sum_nl / len(norm_loads)
+                di_weighted = (max(norm_loads) - min(norm_loads)) / avg_nl if avg_nl > 0 else 0
+                
+                print_and_write(f"  => Jain PONDERADO (carga/capacidad): {jain_weighted:.3f}")
+                print_and_write(f"  => Disparidad PONDERADA: {di_weighted:.3f}")
+                
+                # Detalle por nodo
+                for node in sorted(avg_norm_load.keys()):
+                    cap = NODE_CAPACITY.get(node, 0.5)
+                    raw_work = sum(workload_reps[rep].get(node, 0) for rep in workload_reps) / n_reps
+                    print_and_write(f"     {node}: carga={raw_work:,.0f} / cap={cap} => carga_norm={avg_norm_load[node]:,.0f}")
 
 
 def analyze_latencies(by_strategy_rep_latencies, file_out):
@@ -173,7 +215,7 @@ def run_statistical_test(by_strategy_rep_mean, file_out):
 
 
 def main():
-    by_strategy, by_strategy_rep_latencies, node_counts_by_rep = load_post_phase_data()
+    by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep = load_post_phase_data()
     
     if not by_strategy:
         print("No se encontraron datos de la fase 'post' en el CSV. Asegúrate de ejecutar run_dynamic_experiment.py primero.")
@@ -185,7 +227,7 @@ def main():
     report_path = f"results/dynamic_statistical_report_{timestamp}.txt"
     
     with open(report_path, "w", encoding="utf-8") as file_out:
-        analyze_traffic_distribution(node_counts_by_rep, file_out)
+        analyze_traffic_distribution(node_counts_by_rep, node_workload_by_rep, file_out)
         by_strategy_rep_mean = analyze_latencies(by_strategy_rep_latencies, file_out)
         run_statistical_test(by_strategy_rep_mean, file_out)
         

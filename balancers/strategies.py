@@ -336,38 +336,43 @@ class MLQuboBatch:
             pred = self.model.predict(np.array([feats]))[0]
             base_preds.append(pred)
 
+        avg_ts = avg_task if avg_task > 0 else 1.0
+        norm_tasks = [ts / avg_ts for ts in task_sizes]
+        
+        # FACTOR CLAVE: Fairness Dinámico
+        scaled_base = [p / 10.0 for p in base_preds]
+        
         linear = {}
         quadratic = {}
         
-        # Penalización para restricción "cada tarea va a exactamente 1 nodo"
-        P_constraint = max(base_preds) * 10 if base_preds else 100
-        
-        for i in range(num_tasks):
-            for j in range(num_nodes):
+        max_base = max(scaled_base) if scaled_base else 1.0
+        P_constraint = (max_base ** 2) * num_tasks * 1000 + 10000
+
+        for j in range(num_nodes):
+            L_j = scaled_base[j]
+            
+            for i in range(num_tasks):
                 v_ij = i * num_nodes + j
-                linear[v_ij] = linear.get(v_ij, 0) - P_constraint
+                
+                # El impacto (esfuerzo) crece en nodos más lentos/degradados
+                E_ij = norm_tasks[i] * L_j
+                
+                # Lineal: 2 * L_j * E_ij + E_ij^2
+                cost_lin = 2 * L_j * E_ij + (E_ij ** 2)
+                linear[v_ij] = linear.get(v_ij, 0) + cost_lin
+                linear[v_ij] -= P_constraint
+                
                 for k in range(j + 1, num_nodes):
                     v_ik = i * num_nodes + k
                     var1, var2 = min(v_ij, v_ik), max(v_ij, v_ik)
                     quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + 2 * P_constraint
-                    
-        # Términos de costo: minimizar varianza de carga entre nodos
-        for j in range(num_nodes):
-            base_j = base_preds[j]
-            speed_j = self.node_speed[self.nodes[j]["id"]]
-            
-            for i in range(num_tasks):
-                v_ij = i * num_nodes + j
-                W_ij = task_sizes[i] / (speed_j if speed_j > 0 else 1)
                 
-                cost_lin = 2 * base_j * W_ij + (W_ij ** 2)
-                linear[v_ij] = linear.get(v_ij, 0) + cost_lin
-                
-                for k in range(i + 1, num_tasks):
-                    v_kj = k * num_nodes + j
-                    W_kj = task_sizes[k] / (speed_j if speed_j > 0 else 1)
-                    cost_quad = 2 * W_ij * W_kj
+                for k2 in range(i + 1, num_tasks):
+                    v_kj = k2 * num_nodes + j
+                    E_kj = norm_tasks[k2] * L_j
                     
+                    # Cuadrático: penaliza más fuertemente colisiones en nodos lentos
+                    cost_quad = 2 * E_ij * E_kj
                     var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
                     quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
 
@@ -403,3 +408,288 @@ class MLQuboBatch:
         with self._pending_lock:
             self._pending[node_id] = max(0, self._pending[node_id] - 1)
 
+
+
+class MLQuboBatchLight(MLQuboBatch):
+    """Variante ultra-ligera de ML+QUBO: num_reads=1, num_sweeps=10.
+    Objetivo: aislar cuánto del overhead viene del solver SA vs del ML."""
+
+    def __init__(self, nodes, model, poller, node_speed, model_name="catboost"):
+        super().__init__(nodes, model, poller, node_speed, model_name=model_name)
+        self.name = f"ml_qubo_light_{model_name}"
+
+    def _solve_batch(self, task_sizes):
+        import dimod
+        import numpy as np
+        num_tasks = len(task_sizes)
+        num_nodes = len(self.nodes)
+
+        avg_task = sum(task_sizes) / num_tasks if num_tasks > 0 else 1.0
+        base_preds = []
+        for n in self.nodes:
+            stats = self.poller.get_stats(n["id"])
+            with self._pending_lock:
+                stats["active_requests"] = stats.get("active_requests", 0) + self._pending[n["id"]]
+            staleness = self.poller.get_staleness_ms(n["id"])
+            staleness = staleness if staleness is not None else 0.0
+            feats = build_features(stats, avg_task, self.node_speed[n["id"]], staleness)
+            pred = self.model.predict(np.array([feats]))[0]
+            base_preds.append(pred)
+
+        norm_tasks = [ts / avg_task for ts in task_sizes]
+        
+        linear = {}
+        quadratic = {}
+        
+        P_constraint = max(base_preds) * num_tasks * 1000 if base_preds else 10000
+
+        for j in range(num_nodes):
+            base_j = base_preds[j]
+            for i in range(num_tasks):
+                v_ij = i * num_nodes + j
+                W_ij = norm_tasks[i] * 10.0
+                
+                cost_lin = 2 * base_j * W_ij + (W_ij ** 2)
+                linear[v_ij] = linear.get(v_ij, 0) + cost_lin
+                linear[v_ij] -= P_constraint
+                
+                for k in range(j + 1, num_nodes):
+                    v_ik = i * num_nodes + k
+                    var1, var2 = min(v_ij, v_ik), max(v_ij, v_ik)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + 2 * P_constraint
+                
+                for k2 in range(i + 1, num_tasks):
+                    v_kj = k2 * num_nodes + j
+                    W_kj = norm_tasks[k2] * 10.0
+                    cost_quad = 2 * W_ij * W_kj
+                    var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
+        
+        bqm = dimod.BinaryQuadraticModel(linear, quadratic, 0, dimod.BINARY)
+
+        # SA ultra-ligero
+        sampleset = self.sampler.sample(bqm, num_reads=1, num_sweeps=10)
+        best_sample = sampleset.first.sample
+
+        decisions = []
+        n_fallback = 0
+        for i in range(num_tasks):
+            chosen_j = None
+            for j in range(num_nodes):
+                v_ij = i * num_nodes + j
+                if best_sample.get(v_ij, 0) == 1:
+                    chosen_j = j
+                    break
+            if chosen_j is None:
+                chosen_j = int(np.argmin(base_preds))
+                n_fallback += 1
+            node = self.nodes[chosen_j]
+            decisions.append((node, base_preds))
+            with self._pending_lock:
+                self._pending[node["id"]] += 1
+
+        if n_fallback > 0:
+            print(f"    [QUBO-Light] WARN: {n_fallback}/{num_tasks} tareas usaron fallback")
+
+        return decisions
+
+
+class PureQuboBatch:
+    """Implementación de QUBO SIN Machine Learning."""
+    
+    MAX_BATCH_SIZE = 8
+    
+    def __init__(self, nodes, poller, node_speed: dict):
+        import threading
+        self.nodes = nodes
+        self.poller = poller
+        self.node_speed = node_speed
+        self.name = "pure_qubo_batch"
+        
+        self._pending = {n["id"]: 0 for n in nodes}
+        self._pending_lock = threading.Lock()
+        
+        try:
+            import dimod
+            self.sampler = dimod.SimulatedAnnealingSampler()
+        except ImportError:
+            self.sampler = None
+
+    def select_batch(self, task_sizes):
+        if not self.sampler:
+            return []
+            
+        num_tasks = len(task_sizes)
+        if num_tasks == 0:
+            return []
+            
+        if num_tasks > self.MAX_BATCH_SIZE:
+            all_decisions = []
+            for start in range(0, num_tasks, self.MAX_BATCH_SIZE):
+                sub_batch = task_sizes[start:start + self.MAX_BATCH_SIZE]
+                sub_decisions = self._solve_batch(sub_batch)
+                all_decisions.extend(sub_decisions)
+            return all_decisions
+        
+        return self._solve_batch(task_sizes)
+
+    def _solve_batch(self, task_sizes):
+        import dimod
+        import numpy as np
+        num_tasks = len(task_sizes)
+        num_nodes = len(self.nodes)
+
+        avg_task = sum(task_sizes) / num_tasks if num_tasks > 0 else 1.0
+        norm_tasks = [ts / avg_task for ts in task_sizes]
+
+        # 1. Costos basados en heurística simple (sin ML)
+        base_costs = []
+        for n in self.nodes:
+            stats = self.poller.get_stats(n["id"])
+            with self._pending_lock:
+                active = stats.get("active_requests", 0) + self._pending[n["id"]]
+            speed = self.node_speed[n["id"]]
+            # Estimación naive de latencia: (peticiones activas + 1) / velocidad²
+            cost = (active + 1) * 10.0 / max(speed ** 2, 0.01)
+            base_costs.append(cost)
+
+        # FACTOR CLAVE: Fairness Dinámico
+        scaled_base = [p / 10.0 for p in base_costs]
+
+        linear = {}
+        quadratic = {}
+        
+        max_base = max(scaled_base) if scaled_base else 1.0
+        P_constraint = (max_base ** 2) * num_tasks * 1000 + 10000
+
+        for j in range(num_nodes):
+            L_j = scaled_base[j]
+            
+            for i in range(num_tasks):
+                v_ij = i * num_nodes + j
+                
+                # El impacto (esfuerzo) crece en nodos más lentos/degradados
+                E_ij = norm_tasks[i] * L_j
+                
+                # Lineal: 2 * L_j * E_ij + E_ij^2
+                cost_lin = 2 * L_j * E_ij + (E_ij ** 2)
+                linear[v_ij] = linear.get(v_ij, 0) + cost_lin
+                linear[v_ij] -= P_constraint
+                
+                for k in range(j + 1, num_nodes):
+                    v_ik = i * num_nodes + k
+                    var1, var2 = min(v_ij, v_ik), max(v_ij, v_ik)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + 2 * P_constraint
+                
+                for k2 in range(i + 1, num_tasks):
+                    v_kj = k2 * num_nodes + j
+                    E_kj = norm_tasks[k2] * L_j
+                    
+                    # Cuadrático: penaliza más fuertemente colisiones en nodos lentos
+                    cost_quad = 2 * E_ij * E_kj
+                    var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
+        
+        bqm = dimod.BinaryQuadraticModel(linear, quadratic, 0, dimod.BINARY)
+        reads = max(20, num_tasks * 5)
+        sampleset = self.sampler.sample(bqm, num_reads=reads)
+        best_sample = sampleset.first.sample
+        
+        decisions = []
+        for i in range(num_tasks):
+            chosen_j = None
+            for j in range(num_nodes):
+                v_ij = i * num_nodes + j
+                if best_sample.get(v_ij, 0) == 1:
+                    chosen_j = j
+                    break
+            
+            if chosen_j is None:
+                chosen_j = int(np.argmin(base_costs))
+            
+            node = self.nodes[chosen_j]
+            decisions.append((node, base_costs))
+            
+            with self._pending_lock:
+                self._pending[node["id"]] += 1
+                
+        return decisions
+
+    def on_complete(self, node_id):
+        with self._pending_lock:
+            self._pending[node_id] = max(0, self._pending[node_id] - 1)
+
+
+class PureQuboBatchLight(PureQuboBatch):
+    """Variante ultra-ligera de Pure QUBO: num_reads=1, num_sweeps=10."""
+
+    def __init__(self, nodes, poller, node_speed):
+        super().__init__(nodes, poller, node_speed)
+        self.name = "pure_qubo_light"
+
+    def _solve_batch(self, task_sizes):
+        import dimod
+        import numpy as np
+        num_tasks = len(task_sizes)
+        num_nodes = len(self.nodes)
+
+        avg_task = sum(task_sizes) / num_tasks if num_tasks > 0 else 1.0
+        norm_tasks = [ts / avg_task for ts in task_sizes]
+
+        base_costs = []
+        for n in self.nodes:
+            stats = self.poller.get_stats(n["id"])
+            with self._pending_lock:
+                active = stats.get("active_requests", 0) + self._pending[n["id"]]
+            speed = self.node_speed[n["id"]]
+            cost = (active + 1) * 10.0 / max(speed ** 2, 0.01)
+            base_costs.append(cost)
+
+        linear = {}
+        quadratic = {}
+        
+        P_constraint = max(base_costs) * num_tasks * 1000 if base_costs else 10000
+
+        for j in range(num_nodes):
+            base_j = base_costs[j]
+            for i in range(num_tasks):
+                v_ij = i * num_nodes + j
+                W_ij = norm_tasks[i] * 10.0
+                
+                cost_lin = 2 * base_j * W_ij + (W_ij ** 2)
+                linear[v_ij] = linear.get(v_ij, 0) + cost_lin
+                linear[v_ij] -= P_constraint
+                
+                for k in range(j + 1, num_nodes):
+                    v_ik = i * num_nodes + k
+                    var1, var2 = min(v_ij, v_ik), max(v_ij, v_ik)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + 2 * P_constraint
+                
+                for k2 in range(i + 1, num_tasks):
+                    v_kj = k2 * num_nodes + j
+                    W_kj = norm_tasks[k2] * 10.0
+                    cost_quad = 2 * W_ij * W_kj
+                    var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
+                    quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
+        
+        bqm = dimod.BinaryQuadraticModel(linear, quadratic, 0, dimod.BINARY)
+
+        sampleset = self.sampler.sample(bqm, num_reads=1, num_sweeps=10)
+        best_sample = sampleset.first.sample
+
+        decisions = []
+        for i in range(num_tasks):
+            chosen_j = None
+            for j in range(num_nodes):
+                v_ij = i * num_nodes + j
+                if best_sample.get(v_ij, 0) == 1:
+                    chosen_j = j
+                    break
+            if chosen_j is None:
+                chosen_j = int(np.argmin(base_costs))
+            node = self.nodes[chosen_j]
+            decisions.append((node, base_costs))
+            with self._pending_lock:
+                self._pending[node["id"]] += 1
+
+        return decisions

@@ -305,7 +305,7 @@ if __name__ == "__main__":
     parser.add_argument("--stats-latency-ms", type=float, default=35,
                          help="Latencia de red simulada para /stats (solo aplica en modo local; "
                               "en modo docker, configúrala en docker-compose.yml)")
-    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax", "qubo", "qubo_batch"],
+    parser.add_argument("--strategies", nargs="+", default=["rr", "wrr", "lc", "p2c", "argmin", "softmax", "qubo_batch", "pure_qubo_batch"],
                         help="Estrategias a ejecutar (ej. --strategies argmin softmax)")
     args = parser.parse_args()
 
