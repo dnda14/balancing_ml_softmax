@@ -14,6 +14,7 @@ import math
 import random
 import threading
 import numpy as np
+import copy
 
 
 def build_features(stats: dict, task_size: float, node_speed: float, staleness_ms: float) -> list:
@@ -339,26 +340,31 @@ class MLQuboBatch:
         avg_ts = avg_task if avg_task > 0 else 1.0
         norm_tasks = [ts / avg_ts for ts in task_sizes]
         
-        # FACTOR CLAVE: Fairness Dinámico
+        # FACTOR CLAVE: Fairness Dinámico Resistente al Herd Effect
+        # Reducimos la escala de base_preds para evitar explosión numérica en QUBO
         scaled_base = [p / 10.0 for p in base_preds]
         
         linear = {}
         quadratic = {}
         
+        # P_constraint debe ser dominante absoluto
         max_base = max(scaled_base) if scaled_base else 1.0
         P_constraint = (max_base ** 2) * num_tasks * 1000 + 10000
 
         for j in range(num_nodes):
             L_j = scaled_base[j]
+            # Extraemos la capacidad física real del nodo (para aislarla del Concept Drift)
+            speed_j = self.node_speed[self.nodes[j]["id"]]
+            C_j = speed_j if speed_j > 0.1 else 0.1
             
             for i in range(num_tasks):
                 v_ij = i * num_nodes + j
                 
-                # El impacto (esfuerzo) crece en nodos más lentos/degradados
-                E_ij = norm_tasks[i] * L_j
+                # W_ij = impacto de la tarea i en el nodo j basado puramente en capacidad física
+                W_ij = (norm_tasks[i] * 10.0) / C_j
                 
-                # Lineal: 2 * L_j * E_ij + E_ij^2
-                cost_lin = 2 * L_j * E_ij + (E_ij ** 2)
+                # Lineal: penaliza asignar a nodos que YA tienen carga (L_j)
+                cost_lin = 2 * L_j * W_ij + (W_ij ** 2)
                 linear[v_ij] = linear.get(v_ij, 0) + cost_lin
                 linear[v_ij] -= P_constraint
                 
@@ -369,10 +375,11 @@ class MLQuboBatch:
                 
                 for k2 in range(i + 1, num_tasks):
                     v_kj = k2 * num_nodes + j
-                    E_kj = norm_tasks[k2] * L_j
+                    W_kj = (norm_tasks[k2] * 10.0) / C_j
                     
-                    # Cuadrático: penaliza más fuertemente colisiones en nodos lentos
-                    cost_quad = 2 * E_ij * E_kj
+                    # Cuadrático: penaliza colisiones basado en capacidad FÍSICA, no en carga.
+                    # Así, aunque L_j sea 0, meter dos tareas a un Raspberry Pi dolerá mucho.
+                    cost_quad = 2 * W_ij * W_kj
                     var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
                     quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
 
@@ -384,6 +391,9 @@ class MLQuboBatch:
         best_sample = sampleset.first.sample
         
         decisions = []
+        # Fix 3: Copia mutable de base_preds para actualizar intra-lote
+        dynamic_preds = list(base_preds)
+        
         for i in range(num_tasks):
             chosen_j = None
             for j in range(num_nodes):
@@ -392,12 +402,21 @@ class MLQuboBatch:
                     chosen_j = j
                     break
             
-            # Fallback: si el solver no asignó esta tarea, usar el nodo con menor carga predicha
+            # Fix 2: Fallback proporcional a capacidad física (en vez de argmin deterministico)
             if chosen_j is None:
-                chosen_j = int(np.argmin(base_preds))
+                speeds = [self.node_speed[n["id"]] for n in self.nodes]
+                total_speed = sum(speeds)
+                probs = [s / total_speed for s in speeds]
+                chosen_j = random.choices(range(num_nodes), weights=probs, k=1)[0]
             
             node = self.nodes[chosen_j]
-            decisions.append((node, base_preds))
+            decisions.append((node, list(dynamic_preds)))
+            
+            # Fix 3: Actualizar predicciones intra-lote para que las siguientes
+            # tareas "vean" que este nodo ya recibió carga adicional
+            speed_j = self.node_speed[node["id"]]
+            impact = (norm_tasks[i] * avg_ts) / max(speed_j, 0.1)
+            dynamic_preds[chosen_j] += impact
             
             with self._pending_lock:
                 self._pending[node["id"]] += 1
@@ -472,6 +491,7 @@ class MLQuboBatchLight(MLQuboBatch):
         best_sample = sampleset.first.sample
 
         decisions = []
+        dynamic_preds = list(base_preds)
         n_fallback = 0
         for i in range(num_tasks):
             chosen_j = None
@@ -480,11 +500,19 @@ class MLQuboBatchLight(MLQuboBatch):
                 if best_sample.get(v_ij, 0) == 1:
                     chosen_j = j
                     break
+            # Fix 2: Fallback proporcional
             if chosen_j is None:
-                chosen_j = int(np.argmin(base_preds))
+                speeds = [self.node_speed[n["id"]] for n in self.nodes]
+                total_speed = sum(speeds)
+                probs = [s / total_speed for s in speeds]
+                chosen_j = random.choices(range(num_nodes), weights=probs, k=1)[0]
                 n_fallback += 1
             node = self.nodes[chosen_j]
-            decisions.append((node, base_preds))
+            decisions.append((node, list(dynamic_preds)))
+            # Fix 3: Actualizar predicciones intra-lote
+            speed_j = self.node_speed[node["id"]]
+            impact = (norm_tasks[i] * avg_task) / max(speed_j, 0.1)
+            dynamic_preds[chosen_j] += impact
             with self._pending_lock:
                 self._pending[node["id"]] += 1
 
@@ -553,7 +581,7 @@ class PureQuboBatch:
             cost = (active + 1) * 10.0 / max(speed ** 2, 0.01)
             base_costs.append(cost)
 
-        # FACTOR CLAVE: Fairness Dinámico
+        # FACTOR CLAVE: Fairness Dinámico Resistente al Herd Effect
         scaled_base = [p / 10.0 for p in base_costs]
 
         linear = {}
@@ -564,15 +592,15 @@ class PureQuboBatch:
 
         for j in range(num_nodes):
             L_j = scaled_base[j]
+            speed_j = self.node_speed[self.nodes[j]["id"]]
+            C_j = speed_j if speed_j > 0.1 else 0.1
             
             for i in range(num_tasks):
                 v_ij = i * num_nodes + j
                 
-                # El impacto (esfuerzo) crece en nodos más lentos/degradados
-                E_ij = norm_tasks[i] * L_j
+                W_ij = (norm_tasks[i] * 10.0) / C_j
                 
-                # Lineal: 2 * L_j * E_ij + E_ij^2
-                cost_lin = 2 * L_j * E_ij + (E_ij ** 2)
+                cost_lin = 2 * L_j * W_ij + (W_ij ** 2)
                 linear[v_ij] = linear.get(v_ij, 0) + cost_lin
                 linear[v_ij] -= P_constraint
                 
@@ -583,10 +611,9 @@ class PureQuboBatch:
                 
                 for k2 in range(i + 1, num_tasks):
                     v_kj = k2 * num_nodes + j
-                    E_kj = norm_tasks[k2] * L_j
+                    W_kj = (norm_tasks[k2] * 10.0) / C_j
                     
-                    # Cuadrático: penaliza más fuertemente colisiones en nodos lentos
-                    cost_quad = 2 * E_ij * E_kj
+                    cost_quad = 2 * W_ij * W_kj
                     var1, var2 = min(v_ij, v_kj), max(v_ij, v_kj)
                     quadratic[(var1, var2)] = quadratic.get((var1, var2), 0) + cost_quad
         
@@ -596,6 +623,8 @@ class PureQuboBatch:
         best_sample = sampleset.first.sample
         
         decisions = []
+        dynamic_costs = list(base_costs)
+        
         for i in range(num_tasks):
             chosen_j = None
             for j in range(num_nodes):
@@ -604,11 +633,20 @@ class PureQuboBatch:
                     chosen_j = j
                     break
             
+            # Fix 2: Fallback proporcional a capacidad física
             if chosen_j is None:
-                chosen_j = int(np.argmin(base_costs))
+                speeds = [self.node_speed[n["id"]] for n in self.nodes]
+                total_speed = sum(speeds)
+                probs = [s / total_speed for s in speeds]
+                chosen_j = random.choices(range(num_nodes), weights=probs, k=1)[0]
             
             node = self.nodes[chosen_j]
-            decisions.append((node, base_costs))
+            decisions.append((node, list(dynamic_costs)))
+            
+            # Fix 3: Actualizar costos intra-lote
+            speed_j = self.node_speed[node["id"]]
+            impact = (norm_tasks[i] * avg_task) / max(speed_j, 0.1)
+            dynamic_costs[chosen_j] += impact
             
             with self._pending_lock:
                 self._pending[node["id"]] += 1
@@ -678,6 +716,7 @@ class PureQuboBatchLight(PureQuboBatch):
         best_sample = sampleset.first.sample
 
         decisions = []
+        dynamic_costs = list(base_costs)
         for i in range(num_tasks):
             chosen_j = None
             for j in range(num_nodes):
@@ -685,10 +724,18 @@ class PureQuboBatchLight(PureQuboBatch):
                 if best_sample.get(v_ij, 0) == 1:
                     chosen_j = j
                     break
+            # Fix 2: Fallback proporcional
             if chosen_j is None:
-                chosen_j = int(np.argmin(base_costs))
+                speeds = [self.node_speed[n["id"]] for n in self.nodes]
+                total_speed = sum(speeds)
+                probs = [s / total_speed for s in speeds]
+                chosen_j = random.choices(range(num_nodes), weights=probs, k=1)[0]
             node = self.nodes[chosen_j]
-            decisions.append((node, base_costs))
+            decisions.append((node, list(dynamic_costs)))
+            # Fix 3: Actualizar costos intra-lote
+            speed_j = self.node_speed[node["id"]]
+            impact = (norm_tasks[i] * avg_task) / max(speed_j, 0.1)
+            dynamic_costs[chosen_j] += impact
             with self._pending_lock:
                 self._pending[node["id"]] += 1
 

@@ -24,6 +24,10 @@ def load_post_phase_data(path=None):
     node_counts_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     # NUEVO: acumular task_size por nodo por repetición
     node_workload_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    # NUEVO: acumular overhead_ms (tiempo del algoritmo) por estrategia/rep
+    overhead_by_strategy_rep = defaultdict(lambda: defaultdict(list))
+    # NUEVO: acumular server_latency_ms (tiempo puro de ejecución)
+    server_latency_by_strategy_rep = defaultdict(lambda: defaultdict(list))
     
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -42,7 +46,23 @@ def load_post_phase_data(path=None):
             node_counts_by_rep[strat][rep][node] += 1
             node_workload_by_rep[strat][rep][node] += task_size
             
-    return by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep
+            # Capturar overhead del algoritmo si existe en el CSV
+            overhead_val = row.get("overhead_ms", "")
+            if overhead_val and overhead_val.strip():
+                try:
+                    overhead_by_strategy_rep[strat][rep].append(float(overhead_val))
+                except ValueError:
+                    pass
+                    
+            # NUEVO: Capturar server_latency (tiempo real en el nodo)
+            server_lat_val = row.get("server_latency_ms", "")
+            if server_lat_val and server_lat_val.strip():
+                try:
+                    server_latency_by_strategy_rep[strat][rep].append(float(server_lat_val))
+                except ValueError:
+                    pass
+            
+    return by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep, overhead_by_strategy_rep, server_latency_by_strategy_rep
 
 
 def cohens_d(a, b):
@@ -148,6 +168,7 @@ def analyze_latencies(by_strategy_rep_latencies, file_out):
     print_and_write("2. LATENCIA PROMEDIO DURANTE LA FALLA")
     print_and_write("=" * 80)
     
+    print_and_write("\n--- Latencia END-TO-END (Incluye overhead y colas del balanceador) ---")
     by_strategy_rep_mean = defaultdict(dict)
     
     strategies = sorted(by_strategy_rep_latencies.keys())
@@ -164,6 +185,31 @@ def analyze_latencies(by_strategy_rep_latencies, file_out):
         print_and_write(f"{strat:<25}: {overall_mean:>7.1f} ± {overall_std:>5.1f} ms")
         
     return by_strategy_rep_mean
+
+
+def analyze_server_latencies(server_latency_by_strategy_rep, file_out):
+    def print_and_write(text):
+        print(text)
+        file_out.write(text + "\n")
+        
+    print_and_write("\n--- Latencia del SERVIDOR (Puro procesamiento en el Nodo, Asume Hardware Óptimo) ---")
+    if not server_latency_by_strategy_rep:
+        print_and_write("No se encontraron datos de latencia de servidor en el CSV.")
+        return
+        
+    strategies = sorted(server_latency_by_strategy_rep.keys())
+    for strat in strategies:
+        reps = server_latency_by_strategy_rep[strat]
+        all_lats = []
+        for rep, lats in reps.items():
+            all_lats.extend(lats)
+            
+        if not all_lats:
+            continue
+            
+        mean_lat = statistics.mean(all_lats)
+        p95_lat = sorted(all_lats)[int(len(all_lats) * 0.95)] if len(all_lats) > 1 else mean_lat
+        print_and_write(f"{strat:<25}: Media = {mean_lat:>7.1f} ms | P95 = {p95_lat:>7.1f} ms")
 
 
 def run_statistical_test(by_strategy_rep_mean, file_out):
@@ -214,8 +260,50 @@ def run_statistical_test(by_strategy_rep_mean, file_out):
         print_and_write("\n=> RESULTADO: La diferencia NO es significativa (p >= 0.05). Se necesitan más repeticiones.")
 
 
+def analyze_overhead(overhead_by_strategy_rep, file_out):
+    """Analiza el overhead del algoritmo de decisión (tiempo de SA/QUBO vs Softmax vs Argmin)."""
+    def print_and_write(text):
+        print(text)
+        file_out.write(text + "\n")
+    
+    print_and_write("\n" + "=" * 80)
+    print_and_write("4. OVERHEAD DEL ALGORITMO DE DECISIÓN (Tiempo del Balanceador)")
+    print_and_write("=" * 80)
+    
+    if not overhead_by_strategy_rep:
+        print_and_write("No se encontraron datos de overhead en el CSV (columna 'overhead_ms').")
+        print_and_write("Re-ejecuta el experimento para capturar este dato.")
+        return
+    
+    strategies = sorted(overhead_by_strategy_rep.keys())
+    for strat in strategies:
+        reps = overhead_by_strategy_rep[strat]
+        all_overheads = []
+        for rep, overheads in reps.items():
+            all_overheads.extend(overheads)
+        
+        if not all_overheads:
+            continue
+        
+        mean_oh = statistics.mean(all_overheads)
+        median_oh = statistics.median(all_overheads)
+        max_oh = max(all_overheads)
+        min_oh = min(all_overheads)
+        p95_oh = sorted(all_overheads)[int(len(all_overheads) * 0.95)] if len(all_overheads) > 1 else mean_oh
+        std_oh = statistics.pstdev(all_overheads) if len(all_overheads) > 1 else 0
+        
+        print_and_write(f"\n{strat}:")
+        print_and_write(f"  Media:    {mean_oh:>10.2f} ms")
+        print_and_write(f"  Mediana:  {median_oh:>10.2f} ms")
+        print_and_write(f"  P95:      {p95_oh:>10.2f} ms")
+        print_and_write(f"  Max:      {max_oh:>10.2f} ms")
+        print_and_write(f"  Min:      {min_oh:>10.2f} ms")
+        print_and_write(f"  Std:      {std_oh:>10.2f} ms")
+        print_and_write(f"  N muestras: {len(all_overheads)}")
+
+
 def main():
-    by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep = load_post_phase_data()
+    by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep, overhead_by_strategy_rep, server_latency_by_strategy_rep = load_post_phase_data()
     
     if not by_strategy:
         print("No se encontraron datos de la fase 'post' en el CSV. Asegúrate de ejecutar run_dynamic_experiment.py primero.")
@@ -229,7 +317,9 @@ def main():
     with open(report_path, "w", encoding="utf-8") as file_out:
         analyze_traffic_distribution(node_counts_by_rep, node_workload_by_rep, file_out)
         by_strategy_rep_mean = analyze_latencies(by_strategy_rep_latencies, file_out)
+        analyze_server_latencies(server_latency_by_strategy_rep, file_out)
         run_statistical_test(by_strategy_rep_mean, file_out)
+        analyze_overhead(overhead_by_strategy_rep, file_out)
         
     print(f"\n[V] Reporte guardado con éxito en: {report_path}")
 
