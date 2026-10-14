@@ -11,10 +11,10 @@ def get_latest_file(pattern, default_path):
     files = glob.glob(pattern)
     return max(files, key=os.path.getmtime) if files else default_path
 
-def load_post_phase_data(path=None):
+def load_post_phase_data(path=None, fallback_path="results/dynamic_experiment_20260929_114508.csv"):
     if path is None:
         path = get_latest_file("results/dynamic_experiment_*.csv", "results/dynamic_experiment.csv")
-    print(f"Leyendo datos de: {path}")
+    print(f"Leyendo datos principales de: {path}")
     if not os.path.exists(path):
         print(f"Error: {path} no encontrado.")
         sys.exit(1)
@@ -22,45 +22,54 @@ def load_post_phase_data(path=None):
     by_strategy = defaultdict(list)
     by_strategy_rep_latencies = defaultdict(lambda: defaultdict(list))
     node_counts_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    # NUEVO: acumular task_size por nodo por repetición
     node_workload_by_rep = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    # NUEVO: acumular overhead_ms (tiempo del algoritmo) por estrategia/rep
     overhead_by_strategy_rep = defaultdict(lambda: defaultdict(list))
-    # NUEVO: acumular server_latency_ms (tiempo puro de ejecución)
     server_latency_by_strategy_rep = defaultdict(lambda: defaultdict(list))
     
-    with open(path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row["phase"] != "post":
-                continue # Solo nos interesa analizar el comportamiento durante la falla
-                
-            strat = row["strategy"]
-            rep = int(row["rep"])
-            lat = float(row["latency_ms"])
-            node = row["node"]
-            task_size = float(row.get("task_size", 0))
-            
-            by_strategy[strat].append(lat)
-            by_strategy_rep_latencies[strat][rep].append(lat)
-            node_counts_by_rep[strat][rep][node] += 1
-            node_workload_by_rep[strat][rep][node] += task_size
-            
-            # Capturar overhead del algoritmo si existe en el CSV
-            overhead_val = row.get("overhead_ms", "")
-            if overhead_val and overhead_val.strip():
-                try:
-                    overhead_by_strategy_rep[strat][rep].append(float(overhead_val))
-                except ValueError:
-                    pass
+    def process_file(csv_file, skip_strats=None):
+        if not os.path.exists(csv_file):
+            return
+        with open(csv_file, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("phase") != "post":
+                    continue
+                strat = row["strategy"]
+                if skip_strats and strat in skip_strats:
+                    continue
                     
-            # NUEVO: Capturar server_latency (tiempo real en el nodo)
-            server_lat_val = row.get("server_latency_ms", "")
-            if server_lat_val and server_lat_val.strip():
-                try:
-                    server_latency_by_strategy_rep[strat][rep].append(float(server_lat_val))
-                except ValueError:
-                    pass
+                rep = int(row["rep"])
+                lat = float(row["latency_ms"])
+                node = row["node"]
+                task_size = float(row.get("task_size", 0))
+                
+                by_strategy[strat].append(lat)
+                by_strategy_rep_latencies[strat][rep].append(lat)
+                node_counts_by_rep[strat][rep][node] += 1
+                node_workload_by_rep[strat][rep][node] += task_size
+                
+                overhead_val = row.get("overhead_ms", "")
+                if overhead_val and overhead_val.strip():
+                    try:
+                        overhead_by_strategy_rep[strat][rep].append(float(overhead_val))
+                    except ValueError:
+                        pass
+                        
+                server_lat_val = row.get("server_latency_ms", "")
+                if server_lat_val and server_lat_val.strip():
+                    try:
+                        server_latency_by_strategy_rep[strat][rep].append(float(server_lat_val))
+                    except ValueError:
+                        pass
+
+    # Cargar archivo principal
+    process_file(path)
+    
+    # Cargar datos de ML previos si no están presentes en el archivo principal
+    if fallback_path and os.path.exists(fallback_path) and os.path.abspath(fallback_path) != os.path.abspath(path):
+        existing_strats = set(by_strategy.keys())
+        print(f"Buscando estrategias adicionales en fallback: {fallback_path}")
+        process_file(fallback_path, skip_strats=existing_strats)
             
     return by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep, overhead_by_strategy_rep, server_latency_by_strategy_rep
 
@@ -193,9 +202,10 @@ def analyze_server_latencies(server_latency_by_strategy_rep, file_out):
         file_out.write(text + "\n")
         
     print_and_write("\n--- Latencia del SERVIDOR (Puro procesamiento en el Nodo, Asume Hardware Óptimo) ---")
+    server_latency_rep_mean = defaultdict(dict)
     if not server_latency_by_strategy_rep:
         print_and_write("No se encontraron datos de latencia de servidor en el CSV.")
-        return
+        return server_latency_rep_mean
         
     strategies = sorted(server_latency_by_strategy_rep.keys())
     for strat in strategies:
@@ -203,6 +213,8 @@ def analyze_server_latencies(server_latency_by_strategy_rep, file_out):
         all_lats = []
         for rep, lats in reps.items():
             all_lats.extend(lats)
+            if lats:
+                server_latency_rep_mean[strat][rep] = statistics.mean(lats)
             
         if not all_lats:
             continue
@@ -211,53 +223,63 @@ def analyze_server_latencies(server_latency_by_strategy_rep, file_out):
         p95_lat = sorted(all_lats)[int(len(all_lats) * 0.95)] if len(all_lats) > 1 else mean_lat
         print_and_write(f"{strat:<25}: Media = {mean_lat:>7.1f} ms | P95 = {p95_lat:>7.1f} ms")
 
+    return server_latency_rep_mean
 
-def run_statistical_test(by_strategy_rep_mean, file_out):
+
+def run_statistical_test(by_strategy_rep_mean, server_latency_rep_mean, file_out):
     def print_and_write(text):
         print(text)
         file_out.write(text + "\n")
         
     print_and_write("\n" + "=" * 80)
-    print_and_write("3. PRUEBA DE SIGNIFICANCIA (H3): WRR vs ML-Softmax (Catboost, Post-Falla)")
+    print_and_write("3. PRUEBAS DE SIGNIFICANCIA ESTADÍSTICA (Post-Falla)")
     print_and_write("=" * 80)
     
-    a_dict = by_strategy_rep_mean.get("ml_softmax_catboost", {})
-    b_dict = by_strategy_rep_mean.get("Weighted Round Robin", {})
-    common_reps = sorted(set(a_dict.keys()) & set(b_dict.keys()))
-    
-    if len(common_reps) < 2:
-        print_and_write("No hay suficientes repeticiones para una prueba estadística (se necesitan al menos 2).")
-        return
+    def compare_pair(title, a_dict, b_dict, name_a, name_b):
+        common_reps = sorted(set(a_dict.keys()) & set(b_dict.keys()))
+        print_and_write(f"\n--- {title}: {name_b} vs {name_a} ---")
+        if len(common_reps) < 2:
+            print_and_write("  No hay suficientes repeticiones pareadas (se necesitan al menos 2).")
+            return
+            
+        a = [a_dict[r] for r in common_reps]
+        b = [b_dict[r] for r in common_reps]
         
-    a = [a_dict[r] for r in common_reps] # Propuesto (usaremos catboost como representante)
-    b = [b_dict[r] for r in common_reps] # Baseline a comparar (WRR)
+        t_stat, p_value_t = sps.ttest_rel(a, b)
+        u_stat, p_value_u = sps.mannwhitneyu(a, b, alternative='two-sided')
+        
+        mean_diff = sum(b)/len(b) - sum(a)/len(a)
+        pct_improvement = 100 * mean_diff / (sum(b)/len(b)) if sum(b) != 0 else float("nan")
+        d = cohens_d(b, a)
+        
+        print_and_write(f"  n repeticiones pareadas = {len(common_reps)}")
+        print_and_write(f"  Media {name_a:<18} = {sum(a)/len(a):.1f} ms")
+        print_and_write(f"  Media {name_b:<18} = {sum(b)/len(b):.1f} ms")
+        print_and_write(f"  Diferencia              = {mean_diff:.1f} ms ({pct_improvement:+.1f}%)")
+        print_and_write(f"  Prueba T-Pareada p-valor = {p_value_t:.6f}")
+        print_and_write(f"  Mann-Whitney U p-valor   = {p_value_u:.6f}")
+        print_and_write(f"  Cohen's d (Efecto)       = {d:.3f} ({'grande' if abs(d) > 0.8 else 'mediano' if abs(d) > 0.5 else 'pequeño'})")
+        
+        if p_value_t < 0.05:
+            print_and_write("  => RESULTADO: La diferencia es ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05).")
+        else:
+            print_and_write("  => RESULTADO: La diferencia NO es significativa (p >= 0.05).")
+
+    wrr_e2e = by_strategy_rep_mean.get("Weighted Round Robin", {})
+    softmax_e2e = by_strategy_rep_mean.get("ml_softmax_catboost", {})
+    qubo_e2e = by_strategy_rep_mean.get("ml_qubo_batch_catboost", {})
     
-    # Supuestos:
-    _, p_norm_a = sps.shapiro(a) if len(a) >=3 else (None, 1.0)
-    _, p_norm_b = sps.shapiro(b) if len(b) >=3 else (None, 1.0)
+    wrr_srv = server_latency_rep_mean.get("Weighted Round Robin", {})
+    qubo_srv = server_latency_rep_mean.get("ml_qubo_batch_catboost", {})
     
-    # T-test pareado (ya que se usa misma semilla/carga por repeticion)
-    t_stat, p_value_t = sps.ttest_rel(a, b)
-    # Mann-Whitney U (no paramétrico)
-    u_stat, p_value_u = sps.mannwhitneyu(a, b, alternative='two-sided')
+    # 1. WRR vs ML-Softmax (E2E)
+    compare_pair("H3a: Latencia End-to-End", softmax_e2e, wrr_e2e, "ML-Softmax", "WRR")
     
-    mean_diff = sum(b)/len(b) - sum(a)/len(a)
-    pct_improvement = 100 * mean_diff / (sum(b)/len(b)) if sum(b) != 0 else float("nan")
-    d = cohens_d(b, a) # Positivo si WRR > Softmax
+    # 2. WRR vs ML-QUBO Batch (Latencia pura de Servidor)
+    compare_pair("H3b: Latencia en Servidor (Puro Worker)", qubo_srv, wrr_srv, "ML-QUBO", "WRR")
     
-    print_and_write(f"  n repeticiones pareadas = {len(common_reps)}")
-    print_and_write(f"  Media ML-Softmax        = {sum(a)/len(a):.1f} ms")
-    print_and_write(f"  Media WRR               = {sum(b)/len(b):.1f} ms")
-    print_and_write(f"  Diferencia              = {mean_diff:.1f} ms  ({pct_improvement:.1f}% de reducción de latencia)")
-    print_and_write(f"\n  Prueba T-Pareada p-valor = {p_value_t:.6f}")
-    print_and_write(f"  Mann-Whitney U p-valor   = {p_value_u:.6f}")
-    print_and_write(f"  Cohen's d (Tamaño de efecto) = {d:.3f} ({'grande' if abs(d) > 0.8 else 'mediano'})")
-    
-    if p_value_t < 0.05:
-        print_and_write("\n=> RESULTADO: La diferencia es ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05).")
-        print_and_write("   Se confirma matemáticamente que ML-Softmax resiste mejor la falla que WRR.")
-    else:
-        print_and_write("\n=> RESULTADO: La diferencia NO es significativa (p >= 0.05). Se necesitan más repeticiones.")
+    # 3. WRR vs ML-QUBO Batch (End-to-End)
+    compare_pair("H3c: Latencia End-to-End (con cola CPU)", qubo_e2e, wrr_e2e, "ML-QUBO", "WRR")
 
 
 def analyze_overhead(overhead_by_strategy_rep, file_out):
@@ -317,8 +339,8 @@ def main():
     with open(report_path, "w", encoding="utf-8") as file_out:
         analyze_traffic_distribution(node_counts_by_rep, node_workload_by_rep, file_out)
         by_strategy_rep_mean = analyze_latencies(by_strategy_rep_latencies, file_out)
-        analyze_server_latencies(server_latency_by_strategy_rep, file_out)
-        run_statistical_test(by_strategy_rep_mean, file_out)
+        server_latency_rep_mean = analyze_server_latencies(server_latency_by_strategy_rep, file_out)
+        run_statistical_test(by_strategy_rep_mean, server_latency_rep_mean, file_out)
         analyze_overhead(overhead_by_strategy_rep, file_out)
         
     print(f"\n[V] Reporte guardado con éxito en: {report_path}")
