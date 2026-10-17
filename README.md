@@ -1,86 +1,182 @@
 # Balanceador de Carga Predictivo
 
-Este repositorio contiene la implementación y los experimentos del balanceador de carga predictivo desarrollado como trabajo de tesis. El proyecto extiende los enfoques tradicionales y la literatura reciente (ej. Rahimov & Aghayev, 2026) solucionando el problema de saturación causado por el "efecto manada" y el *Concept Drift* (fluctuaciones de hardware).
+Este repositorio contiene la implementación, el banco de pruebas experimental y los análisis estadísticos del balanceador de carga predictivo desarrollado como trabajo de investigación de tesis. El proyecto aborda y soluciona el problema de saturación causado por el **Efecto Manada** (*Herd Effect*) y la degradación por fluctuaciones de hardware (**Concept Drift**) en clústeres heterogéneos de servidores web.
 
-## 🎯 Objetivos
+El sistema evoluciona desde las heurísticas clásicas hacia enfoques predictivos basados en Machine Learning (CatBoost, LightGBM, XGBoost), formulaciones probabilísticas (ML-Softmax) y optimización combinatoria en micro-lotes mediante modelos cuadráticos **QUBO** (*Quantum Unconstrained Binary Optimization*) resueltos vía *Simulated Annealing*.
 
-1. **Minimizar la latencia** en clústeres heterogéneos de servidores web.
-2. **Evitar la saturación (Efecto Manada)** común en algoritmos que seleccionan determinísticamente el "mejor" nodo (argmin) basándose en métricas ligeramente desactualizadas.
-3. **Lograr adaptabilidad ante fallas y *Concept Drift*** (ej. vecinos ruidosos, *throttling* de CPU) eliminando dependencias de variables estáticas de hardware y apoyándose 100% en telemetría dinámica concurrente.
+---
 
-## 🚀 Cómo se implementó
+## 🎯 Objetivos de la Investigación
 
-La arquitectura del sistema consta de los siguientes componentes principales:
+1. **Minimizar la latencia media y de cola ($P_{95}, P_{99}$)** en clústeres con capacidad de cómputo heterogénea.
+2. **Mitigar el Efecto Manada (*Herd Effect*)**: Evitar que algoritmos determinísticos (*argmin* o *greedy*) colapsen el nodo aparentemente más rápido debido a información de telemetría ligeramente desactualizada (*staleness*).
+3. **Resiliencia ante *Concept Drift* (Fallas en Caliente y Throttling)**: Eliminar variables estáticas de hardware en el modelo predictivo, apoyándose exclusivamente en telemetría de congestión dinámica para permitir la auto-recuperación (*self-healing*) ante degradaciones térmicas o "vecinos ruidosos".
+4. **Optimización Global por Micro-Lotes (Micro-Batching)**: Agrupar peticiones en ventanas ultracortas (50 ms) para resolver la asignación óptima de carga mediante modelos cuadráticos QUBO.
 
-*   **Generador de Carga (`loadgen/`)**: Genera peticiones sintéticas con tamaños de tarea log-normales y simula un tráfico de llegada de alta concurrencia.
-*   **Nodos de Cómputo (`worker/`)**: Servicios construidos con Flask y Gunicorn que simulan procesamiento real intensivo en CPU. En modo producción (Docker), la heterogeneidad de los nodos se logra limitando el hardware a nivel del kernel utilizando `cgroups` (ej. 1.0, 0.7 y 0.45 CPUs).
-*   **Recolector de Métricas (`common/stats_poller.py`)**: Implementa un hilo de sondeo **concurrente** y asíncrono de métricas (`active_requests`, `avg_recent_latency_ms`) hacia los nodos para reducir la latencia de observación (*staleness*) y mantener la información lo más fresca posible.
-*   **Estrategias de Balanceo (`balancers/strategies.py`)**: Implementa cuatro algoritmos para su comparación cruzada:
-    *   *Round Robin (RR)*: Asignación cíclica clásica.
-    *   *Weighted Round Robin (WRR)*: Asignación basada en pesos fijos proporcionales al tamaño del nodo.
-    *   *ML-Argmin*: Modelo predictivo con selección determinística del nodo con menor latencia estimada (Baseline de Machine Learning).
-    *   **ML-Softmax (Propuesto)**: Modelo predictivo con selección probabilística que distribuye la carga usando una función Softmax sobre las estimaciones, logrando un balance perfecto entre la explotación de nodos rápidos y la exploración para evitar colapsos.
+---
 
-## 🛠 Herramientas Usadas y Versiones
+## 📁 Estructura del Repositorio
 
-El proyecto fue desarrollado y probado utilizando el siguiente stack tecnológico:
+```text
+lb_thesis/
+├── balancers/                   # Estrategias de balanceo de carga
+│   └── strategies.py            # RR, WRR, Least Connection, P2C, ML-Argmin, ML-Softmax, ML-QUBO
+├── common/                      # Módulos transversales y telemetría
+│   ├── config.py                # Configuración de red, nodos y capacidades nominales
+│   ├── docker_workers.py        # Orquestación y ciclo de vida de contenedores Docker
+│   ├── local_workers.py         # Soporte de workers para pruebas locales sin Docker
+│   └── stats_poller.py          # Hilo de sondeo asíncrono y concurrente de métricas (/stats)
+├── worker/                      # Servicio web que simula procesamiento intensivo de CPU
+│   ├── Dockerfile               # Imagen base del worker en Python
+│   ├── app.py                   # API Flask + Gunicorn con endpoints /work y /stats
+│   └── requirements.txt         # Dependencias del contenedor worker
+├── loadgen/                     # Generador de tráfico sintético
+│   ├── generator.py             # Generación de tareas con tamaños log-normales
+│   └── client.py                # Inyector de carga HTTP concurrente y micro-batching
+├── data/                        # Datasets y modelos de inferencia entrenados
+│   ├── training_data.json       # Dataset recolectado bajo régimen nominal y falla
+│   ├── model.cbm                # Modelo CatBoost principal serializado
+│   ├── model_lightgbm.txt       # Modelo LightGBM para comparativas
+│   ├── model_xgboost.json       # Modelo XGBoost para comparativas
+│   └── train_metrics.json       # Métricas de entrenamiento y validación (R², RMSE)
+├── results/                     # Datasets de salida, reportes estadísticos y gráficos
+│   ├── raw_requests.csv         # Registro detallado de peticiones individuales
+│   ├── dynamic_experiment.csv   # Telemetría de series de tiempo con inyección de falla
+│   ├── dynamic_statistical_report.txt # Pruebas ANOVA, T-Tests pareados y efecto Cohen's d
+│   └── dynamic_experiment_plot.png    # Gráficos comparativos de respuesta ante fallas
+├── analysis/                    # Scripts complementarios de visualización
+│   └── generate_dynamic_plots.py# Generación de gráficos detallados de series de tiempo
+├── calibrate.py                 # Calibrador de capacidad de CPU del host
+├── train_model.py               # Pipeline de recolección de datos y entrenamiento ML
+├── run_experiment.py            # Ejecución de experimentos en entorno estable (Régimen Base)
+├── run_dynamic_experiment.py    # Ejecución de experimentos con inyección de falla (Concept Drift)
+├── analyze_results.py           # Análisis estadístico del experimento base
+├── analyze_dynamic_results.py   # Análisis estadístico del experimento dinámico con fallback
+├── docker-compose.yml           # Definición del clúster heterogéneo con cgroups
+├── requirements.txt             # Dependencias del balanceador y análisis
+├── ARCHITECTURE.md              # Especificación técnica detallada de la arquitectura QUBO + ML
+└── METODOLOGIA_PROPUESTA_METRICAS.md # Justificación metodológica, variables y métricas
+```
 
-*   **Lenguaje**: Python 3.10+
-*   **Servidor Web / Framework**: Flask `3.0.3` sobre Gunicorn.
-*   **Machine Learning**: CatBoost `1.2.7`. Se eligió este algoritmo de *Gradient Boosting* de árboles simétricos (*oblivious trees*) por su **excepcional velocidad de inferencia (microsegundos)**, lo cual es crítico para no agregar sobrecarga (*overhead*) en el enrutamiento de peticiones. Además, domina en robustez ante datos tabulares sin necesidad de enormes volúmenes de datos.
-*   **Orquestación**: Docker y Docker Compose (para el asilamiento de nodos y configuración de `cgroups`).
-*   **Análisis Estadístico**: `numpy==1.26.4`, `scipy==1.13.1`, `statsmodels==0.14.2`, `matplotlib==3.9.0` (utilizados en `analyze_results.py` para pruebas ANOVA, T-Test pareado, Shapiro-Wilk y cálculos de tamaño de efecto).
+---
 
-## 📊 Escenarios y Resultados
+## 🧠 Estrategias de Balanceo Evaluadas
 
-### Escenario Base: Comparación de Estrategias en Entorno Estable
-Se evaluaron las cuatro estrategias bajo una carga constante de procesamiento para observar su desempeño general.
-*   **WRR y RR**: Mostraron latencias altas promedio (~650-700 ms) al ser "ciegos" y no adaptarse dinámicamente al peso real de las tareas individuales que llegan.
-*   **ML-Argmin**: Redujo significativamente la latencia (~268 ms) pero en ocasiones puntuales sufrió episodios de "efecto manada" debido a la saturación simultánea del nodo aparentemente más rápido.
-*   **ML-Softmax (Propuesto)**: Alcanzó de manera consistente la mejor latencia media (**~222 ms**), superando al baseline predictivo al distribuir de manera probabilística el tráfico y esparcirlo de manera armónica por todo el clúster.
+| Grupo | Estrategia | Descripción |
+| :--- | :--- | :--- |
+| **Heurísticas Clásicas** | `RoundRobin` | Asignación secuencial cíclica sin estado. |
+| | `WeightedRoundRobin` (WRR) | Asignación proporcional a pesos nominales fijos (estándar de la industria). |
+| | `LeastConnection` | Asignación al nodo con menor número de peticiones activas. |
+| | `PowerOfTwoChoices` (P2C) | Selección aleatoria de 2 nodos y despacho al de menor carga. |
+| **Baseline Predictivo** | `MLArgmin` | Réplica de la literatura reciente (Rahimov & Aghayev, 2026). Selección determinística del mínimo predicho por ML. |
+| **Propuesta 1 (Probabilística)** | `MLSoftmax` | Selección estocástica con distribución Softmax sobre latencias estimadas, temperatura adaptativa y contador local de peticiones en vuelo (`_pending`). |
+| **Propuesta 2 (Optimización Combinatoria)** | `MLQuboBatch` | Agrupamiento en micro-lotes (50 ms) y resolución de asignación óptima cuadrática mediante *Simulated Annealing* (`dimod`). Minimiza la varianza y colisiones en nodos de baja capacidad. |
 
-### Escenario 5: Fluctuaciones Dinámicas de Capacidad (Concept Drift)
-Este es el escenario clave de la investigación, diseñado para evaluar la resiliencia del sistema ante un fallo abrupto en la capacidad de hardware de un nodo (*noisy neighbor* o estrangulamiento térmico). En el experimento (`run_dynamic_experiment.py`), a los 13 segundos de ejecución constante, el nodo principal (`node-a`) sufrió una degradación drástica de su CPU (de 1.0 a 0.4 CPUs).
+---
 
-*   **Colapso de la Estrategia Estática (WRR)**: Al seguir dependiendo de pesos fijos (configurados bajo la suposición de que el nodo estaba sano), WRR continuó enviando el 50% de la carga al nodo degradado. Esto resultó en un colapso en cascada de la cola de peticiones, disparando la latencia promedio del sistema a **1,814 ms**.
-*   **Adaptación Autónoma (ML-Softmax)**: Gracias al modelo predictivo entrenado exclusivamente con variables de congestión dinámicas y sin dependencia de variables estáticas de hardware (previniendo el sesgo *Concept Drift*), el balanceador detectó el aumento de latencia en milisegundos. Automáticamente castigó las probabilidades de enrutamiento del `node-a`, desviando el tráfico de manera inteligente hacia los nodos sanos. Esto contuvo el fallo y estabilizó la latencia en **531 ms**.
+## 🛠 Stack Tecnológico y Requisitos
 
-## 🏆 Conclusiones
+* **Lenguaje:** Python 3.10+
+* **Framework Web de Workers:** Flask `3.0.3` sobre Gunicorn (8 hilos de atención).
+* **Modelos Predictivos (Machine Learning):**
+  * `CatBoost 1.2.7` (Modelo principal: inferencia sub-milisegundo gracias a árboles simétricos).
+  * `LightGBM 4.5.0` y `XGBoost 2.1.1` (Evaluación comparativa).
+* **Optimización Cuadrática (QUBO):**
+  * D-Wave `dimod 0.12.18` con *Simulated Annealing Sampler*.
+* **Virtualización y Aislamiento:**
+  * Docker Engine & Docker Compose con restricciones de kernel (`cgroups`).
+  * Nodos heterogéneos configurados:
+    * `node-a`: 1.00 vCPU (referencia alta).
+    * `node-b`: 0.70 vCPU (capacidad media).
+    * `node-c`: 0.45 vCPU (capacidad baja).
+* **Análisis Estadístico:**
+  * `numpy 1.26.4`, `scipy 1.13.1`, `statsmodels 0.14.2`, `matplotlib 3.9.0`.
 
-1.  **Reducción Drástica del Impacto**: La estrategia ML-Softmax propuesta reduce la latencia de impacto frente a fallos parciales de infraestructura en un **70%** (531 ms vs 1,814 ms) en comparación directa con el estándar actual de la industria (WRR).
-2.  **Mitigación del Concept Drift**: Eliminar las variables de hardware estáticas en el entrenamiento del modelo y basar las inferencias en telemetría de congestión de alta velocidad permite la creación de un balanceador con capacidades intrínsecas de **Self-Healing** (auto-recuperación).
-3.  **Prevención del Efecto Manada**: La introducción de un componente probabilístico (Softmax) acoplado a estadísticas de sondeo concurrente es matemáticamente efectivo para prevenir la sobre-saturación de los nodos, solventando los clásicos cuellos de botella de los enrutadores que utilizan `argmin`.
+---
+
+## 🔬 Metodología y Mitigación del *Concept Drift*
+
+### Exclusión de Variables Estáticas
+A diferencia de modelos convencionales que incluyen el identificador o velocidad fija del nodo (`node_speed`) como variable independiente fija, este diseño utiliza exclusivamente variables de congestión dinámicas:
+$$\vec{X} = [\text{task\_size}, \text{active\_requests}, \text{avg\_recent\_latency\_ms}, \Delta\text{active}, \Delta\text{latency}, \text{estimated\_service\_time}, \text{staleness\_ms}, \text{node\_utilization}]$$
+
+Si el hardware de un nodo se degrada en caliente (ej. de 1.0 CPU a 0.4 CPU por estrangulamiento térmico), la longitud de cola y la latencia reciente aumentan inmediatamente. El modelo detecta esta saturación dinámicamente sin requerir re-entrenamiento ni sufrir de sesgos estáticos.
+
+---
 
 ## 💻 Instrucciones de Reproducción
 
-### 1. Calibración y Entrenamiento (Entorno Docker)
-*(Nota: Asegúrate de que los puertos 5001, 5002 y 5003 de tu host estén libres).*
+### 1. Preparación del Entorno
 ```bash
-# Iniciar el clúster heterogéneo
+# Clonar el repositorio
+git clone <url-del-repositorio>
+cd lb_thesis
+
+# Crear y activar entorno virtual
+python -m venv venv
+# En Windows:
+venv\Scripts\activate
+# En Linux/macOS:
+source venv/bin/activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### 2. Despliegue del Clúster Heterogéneo (Docker)
+```bash
+# Construir y levantar los 3 nodos de cómputo aislados
 docker compose up -d --build
 
-# Calibrar hardware local y entrenar el modelo
-python3 calibrate.py --mode docker
-python3 train_model.py --mode docker
+# Verificar que los contenedores estén activos y saludables
+docker compose ps
 ```
 
-### 2. Ejecutar Experimentos Estadísticos Base
+### 3. Calibración y Entrenamiento del Modelo
 ```bash
-# IMPORTANTE: Reemplaza <valor_sugerido> con la tasa arrojada por calibrate.py
-python3 run_experiment.py --mode docker --reps 10 --n 150 --rate <valor_sugerido>
+# Calibrar la capacidad de procesamiento del host
+python calibrate.py --mode docker
 
-# Generar reporte ANOVA y T-Test Pareado
-python3 analyze_results.py
+# Recolectar datos bajo régimen normal y con inyección de falla, luego entrenar CatBoost
+python train_model.py --mode docker
 ```
-Los reportes estadísticos y gráficos de caja (*boxplots*) se guardarán en la carpeta `results/`.
 
-### 3. Ejecutar el Escenario Dinámico (Simulación de Fallo / Escenario 5)
+### 4. Ejecución de Experimentos
+
+#### A. Escenario Base (Régimen Estable)
+Evalúa las estrategias bajo condiciones normales de operación:
 ```bash
-python3 run_dynamic_experiment.py
+python run_experiment.py --mode docker --reps 10 --n 150 --rate 14.5
 ```
-Esto aplicará la falla automatizada y generará la comparativa de series de tiempo `results/dynamic_experiment_plot.png`.
-
+Generar análisis estadístico del experimento base (ANOVA y T-Tests):
 ```bash
-# Al terminar, limpia los contenedores
+python analyze_results.py
+```
+
+#### B. Escenario Dinámico (Inyección de Falla / Concept Drift)
+Simula la degradación en caliente del nodo principal (`node-a`: de 1.0 CPU a 0.4 CPU) a los 13 segundos de ejecución:
+```bash
+python run_dynamic_experiment.py
+```
+Generar reporte estadístico pareado y gráficos de series de tiempo:
+```bash
+python analyze_dynamic_results.py
+```
+
+### 5. Limpieza del Entorno
+```bash
 docker compose down
 ```
+
+---
+
+## 📊 Hitos de Desarrollo del Proyecto
+
+Para fines de seguimiento y entregables de avance de tesis, la implementación se estructura en los siguientes hitos:
+
+* **Hito 1 (30% - Fundamentos y Testbed):**
+  Despliegue del clúster heterogéneo en Docker (`cgroups`), servicio de telemetría concurrente (`stats_poller.py`), inyector de tráfico sintético (`loadgen/`), script de calibración (`calibrate.py`) y estrategias de línea base (`RoundRobin`, `WeightedRoundRobin`).
+* **Hito 2 (60% - Modelado ML y Algoritmos Híbridos):**
+  Muestreo activo en dos fases, entrenamiento y benchmarking de modelos (`CatBoost`, `LightGBM`, `XGBoost`), implementación de la estrategia probabilística `MLSoftmax` e integración del solver combinatorio `MLQuboBatch` con micro-batching.
+* **Hito 3 (100% - Experimentación Masiva y Validación Estadística):**
+  Inyección de fallas dinámicas en caliente (*Concept Drift*), pruebas de hipótesis con significancia estadística (ANOVA de medidas repetidas, T-Test de Student pareado, prueba de rangos de Wilcoxon, cálculo de $d$ de Cohen) y análisis comparativo de overhead computacional.

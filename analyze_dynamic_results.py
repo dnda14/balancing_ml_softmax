@@ -11,9 +11,17 @@ def get_latest_file(pattern, default_path):
     files = glob.glob(pattern)
     return max(files, key=os.path.getmtime) if files else default_path
 
-def load_post_phase_data(path=None, fallback_path="results/dynamic_experiment_20260929_114508.csv"):
+def load_post_phase_data(path=None, fallback_paths=None):
     if path is None:
         path = get_latest_file("results/dynamic_experiment_*.csv", "results/dynamic_experiment.csv")
+    if fallback_paths is None:
+        fallback_paths = [
+            "results/dynamic_experiment_20261014_125740.csv",
+            "results/dynamic_experiment_20260929_114508.csv",
+        ]
+    elif isinstance(fallback_paths, str):
+        fallback_paths = [fallback_paths]
+
     print(f"Leyendo datos principales de: {path}")
     if not os.path.exists(path):
         print(f"Error: {path} no encontrado.")
@@ -65,11 +73,12 @@ def load_post_phase_data(path=None, fallback_path="results/dynamic_experiment_20
     # Cargar archivo principal
     process_file(path)
     
-    # Cargar datos de ML previos si no están presentes en el archivo principal
-    if fallback_path and os.path.exists(fallback_path) and os.path.abspath(fallback_path) != os.path.abspath(path):
-        existing_strats = set(by_strategy.keys())
-        print(f"Buscando estrategias adicionales en fallback: {fallback_path}")
-        process_file(fallback_path, skip_strats=existing_strats)
+    # Cargar datos de experimentos previos si no están presentes en el archivo principal
+    for fb in fallback_paths:
+        if fb and os.path.exists(fb) and os.path.abspath(fb) != os.path.abspath(path):
+            existing_strats = set(by_strategy.keys())
+            print(f"Buscando estrategias adicionales en fallback: {fb}")
+            process_file(fb, skip_strats=existing_strats)
             
     return by_strategy, by_strategy_rep_latencies, node_counts_by_rep, node_workload_by_rep, overhead_by_strategy_rep, server_latency_by_strategy_rep
 
@@ -280,6 +289,13 @@ def run_statistical_test(by_strategy_rep_mean, server_latency_rep_mean, file_out
     
     # 3. WRR vs ML-QUBO Batch (End-to-End)
     compare_pair("H3c: Latencia End-to-End (con cola CPU)", qubo_e2e, wrr_e2e, "ML-QUBO", "WRR")
+
+    # 4. Comparativas con Least Connection (si está presente)
+    lc_e2e = by_strategy_rep_mean.get("Least Connection", {})
+    lc_srv = server_latency_rep_mean.get("Least Connection", {})
+    if lc_e2e:
+        compare_pair("H3d: Latencia End-to-End", lc_e2e, wrr_e2e, "Least Connection", "WRR")
+        compare_pair("H3e: Latencia en Servidor (Puro Worker)", qubo_srv, lc_srv, "ML-QUBO", "Least Connection")
 
 
 def analyze_overhead(overhead_by_strategy_rep, file_out):
