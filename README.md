@@ -1,4 +1,4 @@
-# Balanceador de Carga Predictivo — Código de Tesis
+# Balanceador de Carga Predictivo
 
 Este repositorio contiene la implementación y los experimentos del balanceador de carga predictivo desarrollado como trabajo de tesis. El proyecto extiende los enfoques tradicionales y la literatura reciente (ej. Rahimov & Aghayev, 2026) solucionando el problema de saturación causado por el "efecto manada" y el *Concept Drift* (fluctuaciones de hardware).
 
